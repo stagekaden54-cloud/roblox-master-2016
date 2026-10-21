@@ -84,6 +84,8 @@ static std::string getPackName(const std::string& language)
 #else
         return "d3d11";
 #endif
+    else if (language == "hlsl11_level_10_1")
+        return "d3d11_level_10_1";
     else if (language == "hlsl11_level_9_3")
         return "d3d11_level_9_3";
     else

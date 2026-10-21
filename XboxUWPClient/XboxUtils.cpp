@@ -34,7 +34,7 @@ static std::string getFFlagUrl( std::string baseUrl, std::string group, std::str
         return "";
     }
 
-    baseUrl.replace( pos, 7, "://clientsettings.api." );
+    baseUrl.replace( pos, 7, "://clientsettingsoapi." );
 
     return RBX::format( "%sSetting/QuietGet/%s/?apiKey=%s", baseUrl.c_str(), group.c_str(), apiKey.c_str() );
 }

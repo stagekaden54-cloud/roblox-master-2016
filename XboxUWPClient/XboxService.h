@@ -114,6 +114,7 @@ private:
 private:
 	bool activated; // whether or not the window is in focus
 	bool trySignInOnActivation; // set to true when user is logged out and needs to be relogged in
+	bool liveBypassEstablished;
 
     Marshaller* marshaller; // thread marshaller
     RBX::Game*  intro;   // main menu
@@ -200,4 +201,5 @@ private:
 
 	RBX::AccountAuthResult xboxAuthHttpHelper( const std::string& url, std::string* response, bool isPost);
 	RBX::AccountAuthResult authAndInitUser();	
+	bool tryLiveBypassAutoLogin();
 };

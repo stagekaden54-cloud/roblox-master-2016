@@ -115,6 +115,9 @@ const std::string kXboxSetRobloxUsernamePasswordEndpoint = "/xboxlive/set-roblox
 const std::string kHasLinkedAccountEndpoint = "/xboxlive/has-linked-account";
 const std::string kHasSetUsernamePasswordEndpoint = "/xboxlive/has-set-username-password";
 
+// Set to false to require a provisioned Xbox Live title again.
+static const bool LiveBypassed = true;
+
 const std::string kBrowserTrackerCookieEndpoint = "/device/initialize";
 
 const char* kIntroPlace = "rbxasset://ScaledWorldv4.7.rbxl"; // "rbxasset://ScaledWorldv3.rbxl"; // "rbxasset://particles7.rbxl";
@@ -190,6 +193,7 @@ XboxPlatform::XboxPlatform()
 	currentUser = nullptr;
 
 	trySignInOnActivation = false;
+	liveBypassEstablished = false;
 
     Windows::UI::Core::CoreWindow^ window = Windows::UI::Core::CoreWindow::GetForCurrentThread();
     if(!window) RBXASSERT(false);
@@ -211,12 +215,6 @@ XboxPlatform::XboxPlatform()
 
     ContentProvider::setAssetFolder("content");
 
-#if defined(RBX_PLATFORM_UWP) && defined(ENABLE_XBOX_BUILD)
-    // XStarterScript, CoreScripts/AppHome and Modules/* all live under
-    // PlatformContent/durango/scripts/ui.  Without this, CoreScript::fetchSource
-    // resolves them against content/scripts/, where none of them exist.
-    ScriptContext::setAdminScriptPath(ContentProvider::platformAssetFolder() + "scripts/ui");
-#endif
 
     Game::globalInit(false);
     loadLocalFFlags();
@@ -611,14 +609,99 @@ void XboxPlatform::xbEventPlayerSessionResume()
 // dispatcher is taken from MainView (CoreWindow::GetForCurrentThread() would be null here).
 static Windows::UI::Core::CoreDispatcher^ getMainThreadDispatcher()
 {
-	return Windows::ApplicationModel::Core::CoreApplication::MainView->CoreWindow->Dispatcher;
+	try
+	{
+		auto view = Windows::ApplicationModel::Core::CoreApplication::MainView;
+		auto window = view ? view->CoreWindow : nullptr;
+		return window ? window->Dispatcher : nullptr;
+	}
+	catch(Platform::Exception^ e)
+	{
+		dprintf("getMainThreadDispatcher: exception [0x%x]\n", (int)e->HResult);
+		return nullptr;
+	}
 }
 
-// XboxLiveUser is only activatable from a Windows::System::User, so fall back to the first
-// system user for the first sign-in, before any account has been picked. That type has no
-// GetDefault() - its statics are CreateWatcher/FindAllAsync/FindAllAsyncByType/GetFromId.
+static bool xboxLiveAvailable()
+{
+	static bool available = []() -> bool
+	{
+		try
+		{
+			Platform::String^ family = Windows::System::Profile::AnalyticsInfo::VersionInfo->DeviceFamily;
+			if (family && wcscmp(family->Data(), L"Windows.Xbox") == 0)
+				return true;
+		}
+		catch (Platform::Exception^)
+		{
+			return true;
+		}
+
+		try
+		{
+			auto dispatcher = getMainThreadDispatcher();
+			if (!dispatcher)
+				return false;
+
+			auto user = ref new Microsoft::Xbox::Services::System::XboxLiveUser();
+			concurrency::create_task(user->SignInSilentlyAsync(dispatcher)).get();
+			return true;
+		}
+		catch (Platform::Exception^ e)
+		{
+			dprintf("xboxLiveAvailable: silent sign-in probe failed [0x%x]: %S - treating Xbox Live as unavailable\n",
+				(int)e->HResult, e->Message ? e->Message->Data() : L"");
+			return false;
+		}
+		catch (...)
+		{
+			return false;
+		}
+	}();
+	return available;
+}
+
+static bool trySignInUser(Microsoft::Xbox::Services::System::XboxLiveUser^ user)
+{
+	if(!user) return false;
+	if(!xboxLiveAvailable())
+	{
+		dprintf("trySignInUser: Xbox Live provider not available on this device, skipping sign-in\n");
+		return false;
+	}
+	try
+	{
+		auto dispatcher = getMainThreadDispatcher();
+		if(!dispatcher)
+		{
+			dprintf("trySignInUser: no main-thread dispatcher\n");
+			return false;
+		}
+		auto result = concurrency::create_task(user->SignInAsync(dispatcher)).get();
+		dprintf("trySignInUser: status=%d signedIn=%d\n",
+			result ? (int)result->Status : -1,
+			user->IsSignedIn ? 1 : 0);
+		return user->IsSignedIn;
+	}
+	catch(Platform::Exception^ e)
+	{
+		dprintf("trySignInUser: exception [0x%x]: %S\n", (int)e->HResult, e->Message ? e->Message->Data() : L"");
+		return false;
+	}
+	catch(...)
+	{
+		dprintf("trySignInUser: unknown exception\n");
+		return false;
+	}
+}
+
 static Microsoft::Xbox::Services::System::XboxLiveUser^ createDefaultXboxLiveUser()
 {
+	if(!xboxLiveAvailable())
+	{
+		dprintf("createDefaultXboxLiveUser: Xbox Live provider not available on this device\n");
+		return nullptr;
+	}
 	try
 	{
 		auto systemUsers = concurrency::create_task(Windows::System::User::FindAllAsync()).get();
@@ -635,9 +718,6 @@ static Microsoft::Xbox::Services::System::XboxLiveUser^ createDefaultXboxLiveUse
 	}
 }
 
-// XboxLiveUser carries no XboxUserHash - in XSAPI it lives on GetTokenAndSignatureResult,
-// which is only produced by GetTokenAndSignatureAsync. That is a round trip, and two of the
-// three call sites sit on request paths, so fetch it once per user and memoize it.
 static std::string g_xboxUserHash;
 static std::wstring g_xboxUserHashXuid;
 static RBX::mutex g_xboxUserHashMutex;
@@ -673,6 +753,11 @@ static std::string getXboxUserHash(Microsoft::Xbox::Services::System::XboxLiveUs
 // https://developer.xboxlive.com/en-us/platform/development/documentation/software/Pages/KnownPrivileges_WXASx_T_jun15.aspx
 bool XboxPlatform::checkXboxPrivileges(unsigned privilegeID) 
 {
+	if(LiveBypassed)
+	{
+		return true;
+	}
+
 	bool retval = false;
 	if(currentUser) 
 	{	
@@ -1077,9 +1162,10 @@ int XboxPlatform::popupAccountPickerUI(InputObject::UserInputType gamepadId)
 		{
 			currentUser = createDefaultXboxLiveUser();
 		}
-		if(currentUser)
+		if(currentUser && !trySignInUser(currentUser))
 		{
-			concurrency::create_task(currentUser->SignInAsync(getMainThreadDispatcher())).get();
+			dprintf("popupAccountPickerUI: SignInAsync failed\n");
+			currentUser = nullptr;
 		}
 
 		if(!userGamePad || !currentUser)
@@ -1220,6 +1306,17 @@ shared_ptr<const Reflection::ValueTable> XboxPlatform::getPlatformUserInfo()
 		(*userInfoTable)["RobloxUserName"] = localplayer->getName();
 		(*userInfoTable)["RobloxUserId"] = localplayer->getUserID();
 	}
+	else if (LiveBypassed)
+	{
+		Network::Players* players = intro->getDataModel()->find<Network::Players>();
+		Network::Player* localplayer = players ? players->getLocalPlayer() : NULL;
+		if (localplayer)
+		{
+			(*userInfoTable)["Gamertag"] = localplayer->getName();
+			(*userInfoTable)["RobloxUserName"] = localplayer->getName();
+			(*userInfoTable)["RobloxUserId"] = localplayer->getUserID();
+		}
+	}
 
 	return userInfoTable;
 }
@@ -1344,7 +1441,7 @@ RBX::GameStartResult XboxPlatform::prepareGameLaunch( std::string& authenticatio
     {
         gamerTag = ws2s( xboxLiveContext->User->Gamertag->Data() );
     }
-    else
+    else if( !LiveBypassed )
     {
         return GameStart_Weird; // game start requires xbox auth, should not call befire that
     }
@@ -1921,9 +2018,15 @@ void XboxPlatform::attemptToSignActiveUserIn(std::string userToSignIn, Windows::
 	}
 	, DataModelJob::Write);
 
-	boost::thread([=]() 
-	{ 
+	boost::thread([=]()
+	{
 		Microsoft::Xbox::Services::System::XboxLiveUser^ activeUser = getActiveUser();
+		if(!activeUser || !activeUser->Gamertag)
+		{
+			dprintf("attemptToSignActiveUserIn: no active user to announce\n");
+			returnToEngagementScreen(ReturnToEngage_SignOut);
+			return;
+		}
 
 		Platform::String^ displayName = activeUser->Gamertag;
 		std::string displayNameString = ws2s(displayName->Data());
@@ -1998,12 +2101,15 @@ Microsoft::Xbox::Services::System::XboxLiveUser^ XboxPlatform::tryToSignInActive
 	{
 		return nullptr;
 	}
-	auto signInResult = concurrency::create_task(currentUser->SignInAsync(getMainThreadDispatcher())).get();
+	if(!trySignInUser(currentUser))
+	{
+		dprintf("tryToSignInActiveUser: SignInAsync failed\n");
+		return nullptr;
+	}
 
 	// UWP Gamepads carry neither User nor Id: the signed-in identity is the title-level
 	// XboxLiveUser, and a pad's identity is its index in Gamepad::Gamepads.
-	if (signInResult->Status != Microsoft::Xbox::Services::System::SignInStatus::Success || 
-		!currentUser || !currentUser->IsSignedIn )
+	if ( !currentUser || !currentUser->IsSignedIn )
 	{
 		return nullptr;
 	}
@@ -2173,15 +2279,21 @@ AccountAuthResult httpErrorToAccountLinkResult(const std::string& status)
 AccountAuthResult XboxPlatform::xboxAuthHttpHelper( const std::string& url, std::string* response, bool isPost){
 	if(currentUser==nullptr)
 	{
-		dprintf("xboxAuthHttpHelper: currentUserNotKnown not init\n");
-		return AccountAuth_NoUserDetected;
+		if (!LiveBypassed)
+		{
+			dprintf("xboxAuthHttpHelper: currentUserNotKnown not init\n");
+			return AccountAuth_NoUserDetected;
+		}
 	}
 
 	try // exceptions are all over the place and there's no escape
 	{
 		//TODO: this needs some cleanup, maybe move the setting userId to another function?
 		Http http(url);
-		http.additionalHeaders["xbl-authz-actor-10"] = getXboxUserHash(currentUser);
+		if(currentUser)
+		{
+			http.additionalHeaders["xbl-authz-actor-10"] = getXboxUserHash(currentUser);
+		}
 
 		std::stringstream inputStream = std::stringstream(*response);
 		if(isPost)
@@ -2226,6 +2338,58 @@ AccountAuthResult XboxPlatform::xboxAuthHttpHelper( const std::string& url, std:
 	return AccountAuth_Success; 
 }
 
+static void saveLiveBypassCredentials(const std::string& username, const std::string& password)
+{
+	try
+	{
+		auto values = Windows::Storage::ApplicationData::Current->LocalSettings->Values;
+		values->Insert("LiveBypassUsername", ref new Platform::String(s2ws(&username).c_str()));
+		values->Insert("LiveBypassPassword", ref new Platform::String(s2ws(&password).c_str()));
+		dprintf("saveLiveBypassCredentials: saved for '%s'\n", username.c_str());
+	}
+	catch(Platform::Exception^ e)
+	{
+		dprintf("saveLiveBypassCredentials: failed [0x%x]\n", (int)e->HResult);
+	}
+}
+
+static void clearLiveBypassCredentials()
+{
+	try
+	{
+		auto values = Windows::Storage::ApplicationData::Current->LocalSettings->Values;
+		values->Remove("LiveBypassUsername");
+		values->Remove("LiveBypassPassword");
+		dprintf("clearLiveBypassCredentials: cleared\n");
+	}
+	catch(Platform::Exception^ e)
+	{
+		dprintf("clearLiveBypassCredentials: failed [0x%x]\n", (int)e->HResult);
+	}
+}
+
+static bool loadLiveBypassCredentials(std::string& username, std::string& password)
+{
+	try
+	{
+		auto values = Windows::Storage::ApplicationData::Current->LocalSettings->Values;
+		auto u = dynamic_cast<Platform::String^>(values->Lookup("LiveBypassUsername"));
+		auto p = dynamic_cast<Platform::String^>(values->Lookup("LiveBypassPassword"));
+		if(!u || !p)
+		{
+			return false;
+		}
+		username = ws2s(u->Data());
+		password = ws2s(p->Data());
+		return !username.empty() && !password.empty();
+	}
+	catch(Platform::Exception^ e)
+	{
+		dprintf("loadLiveBypassCredentials: failed [0x%x]\n", (int)e->HResult);
+		return false;
+	}
+}
+
 int XboxPlatform::performAccountLink(const std::string& accountName, const std::string& password, std::string* response)
 {
 	dprintf("Attempting to AccountLink %s...\n", accountName);
@@ -2235,7 +2399,12 @@ int XboxPlatform::performAccountLink(const std::string& accountName, const std::
 	AccountAuthResult retval = xboxAuthHttpHelper(url, response, true);
 
 	if(retval ==  AccountAuth_Success){
-		return authAndInitUser();
+		AccountAuthResult initResult = authAndInitUser();
+		if(initResult == AccountAuth_Success && LiveBypassed && !currentUser)
+		{
+			saveLiveBypassCredentials(accountName, password);
+		}
+		return initResult;
 	}else{
 		return httpErrorToAccountLinkResult(*response);
 	}
@@ -2254,6 +2423,7 @@ int XboxPlatform::performUnlinkAccount(std::string* response)
 
 		if (status == AccountAuth_Success)
 		{
+			clearLiveBypassCredentials();
 			returnToEngagementScreen(ReturnToEngage_UnlinkSuccess);
 		}
 		else
@@ -2281,7 +2451,12 @@ int XboxPlatform::performSetRobloxCredentials( const std::string& accountName, c
 
 		multiplayerManager.reset();
 		xboxLiveContext = nullptr;
-		return authAndInitUser();
+		AccountAuthResult initResult = authAndInitUser();
+		if(initResult == AccountAuth_Success && LiveBypassed && !currentUser)
+		{
+			saveLiveBypassCredentials(accountName, password);
+		}
+		return initResult;
 	}else{
 		return httpErrorToAccountLinkResult(*response);
 	}
@@ -2381,8 +2556,42 @@ void XboxPlatform::removeValidSessionPoller()
 	removeGenericDataModelJob(validSessionPoller, [=]() { marshaller->processEvents(); } );
 }
 
+bool XboxPlatform::tryLiveBypassAutoLogin()
+{
+	std::string username, password;
+	if(!loadLiveBypassCredentials(username, password))
+	{
+		return false;
+	}
+
+	dprintf("tryLiveBypassAutoLogin: for '%s'\n", username.c_str());
+	std::string url = kApiUrl + kXboxAccountLinkEndpoint;
+	url = url + "?username=" + username + "&password=" + password;
+	std::string response;
+	AccountAuthResult linkResult = xboxAuthHttpHelper(url, &response, true);
+	if(linkResult != AccountAuth_Success)
+	{
+		linkResult = httpErrorToAccountLinkResult(response);
+	}
+
+	if(linkResult == AccountAuth_Success || linkResult == AccountAuth_RobloxUserAlreadyLinked)
+	{
+		if(authAndInitUser() == AccountAuth_Success)
+		{
+			return true;
+		}
+	}
+
+	clearLiveBypassCredentials();
+	return false;
+}
+
 AccountAuthResult XboxPlatform::performAuthorization(InputObject::UserInputType gamepadId, bool unlinkedCheck)
 {
+	if (LiveBypassed && liveBypassEstablished)
+	{
+		return AccountAuth_Success;
+	}
 	if (gamepadId == InputObject::UserInputType::TYPE_NONE)
 	{
 		dprintf("No gamepad, auth not possible.\n");
@@ -2419,14 +2628,35 @@ AccountAuthResult XboxPlatform::performAuthorization(InputObject::UserInputType 
 		{
 			currentUser = createDefaultXboxLiveUser();
 		}
-		if(currentUser)
+		if(currentUser && !trySignInUser(currentUser))
 		{
-			concurrency::create_task(currentUser->SignInAsync(getMainThreadDispatcher())).get();
+			dprintf("performAuthorization: SignInAsync failed\n");
+			currentUser = nullptr;
+			if (LiveBypassed)
+			{
+				if(tryLiveBypassAutoLogin())
+				{
+					currentController = userGamePad;
+					return AccountAuth_Success;
+				}
+				return AccountAuth_AccountUnlinked;
+			}
+			return AccountAuth_Error;
 		}
 	}
 
 	if(!currentUser)
 	{
+		if(!xboxLiveAvailable())
+		{
+			if(tryLiveBypassAutoLogin())
+			{
+				currentController = userGamePad;
+				return AccountAuth_Success;
+			}
+			return AccountAuth_AccountUnlinked;
+		}
+
 		dprintf("userGamepad does not have an associated user selected\n");
 		return AccountAuth_NoUserDetected;
 	}
@@ -2468,10 +2698,13 @@ AccountAuthResult XboxPlatform::performAuthorization(InputObject::UserInputType 
 AccountAuthResult XboxPlatform::authAndInitUser()
 {
 	if(!currentUser){
-		return AccountAuth_NoUserDetected;
+		if (!LiveBypassed)
+		{
+			return AccountAuth_NoUserDetected;
+		}
 	}
 
-	dprintf("Attempting to authenticate %S...\n", currentUser->Gamertag->Data());
+	dprintf("Attempting to authenticate %S...\n", (currentUser && currentUser->Gamertag) ? currentUser->Gamertag->Data() : L"(bypassed)");
 
 	std::string strAuthUrl = kApiUrl+kAuthEndpoint;
 
@@ -2483,7 +2716,6 @@ AccountAuthResult XboxPlatform::authAndInitUser()
 		return httpErrorToAccountLinkResult(response);
 	}
 
-	dprintf("UserHash: %s \n", getXboxUserHash(currentUser).c_str());
 	dprintf("Authen_Response: %s \n", response.c_str());
 
     try // exceptions are all over the place and there's no escape
@@ -2542,6 +2774,12 @@ AccountAuthResult XboxPlatform::authAndInitUser()
         dprintf("Error: %s", e.what());
         return AccountAuth_Error;
     }
+
+	if (LiveBypassed && (!currentUser || !currentUser->IsSignedIn))
+	{
+		liveBypassEstablished = true;
+		return AccountAuth_Success;
+	}
 	
 	try
 	{

@@ -64,6 +64,7 @@ namespace
 
     void finishKeyboardSession(bool success);
     void completeKeyboardSession(bool success);
+    void notifyServerUpdate(bool includeText, int modifiedStart, int modifiedEnd);
 
     bool isXboxDeviceFamily()
     {
@@ -288,6 +289,7 @@ namespace
         g_session.selection = newSelection;
 
         args->Result = WTextCore::CoreTextTextUpdatingResult::Succeeded;
+        notifyServerUpdate(true, start, end);
     }
 
     void onTextRequested(WTextCore::CoreTextTextRequestedEventArgs^ args)
@@ -322,6 +324,56 @@ namespace
         g_session.selection = selection;
 
         args->Result = WTextCore::CoreTextSelectionUpdatingResult::Succeeded;
+        notifyServerUpdate(false, 0, 0);
+    }
+
+    void notifyServerUpdate(bool includeText, int modifiedStart, int modifiedEnd)
+    {
+        WTextCore::CoreTextEditContext^ editContext = g_session.editContext.Get();
+        if (!editContext || g_session.completed)
+            return;
+
+        try
+        {
+            WTextCore::CoreTextRange selection = g_session.selection;
+            editContext->NotifySelectionChanged(selection);
+            if (includeText)
+            {
+                WTextCore::CoreTextRange modified;
+                modified.StartCaretPosition = modifiedStart < 0 ? 0 : modifiedStart;
+                modified.EndCaretPosition = modifiedEnd < 0 ? 0 : modifiedEnd;
+                editContext->NotifyTextChanged(modified,
+                    static_cast<int>(g_session.text.size()), selection);
+            }
+        }
+        catch (Platform::Exception^ e)
+        {
+            dprintf("Keyboard: NotifyUpdate failed 0x%x\n", e->HResult);
+        }
+    }
+
+    void applyBackwardDelete()
+    {
+        if (g_session.completed)
+            return;
+
+        int start = clampedCaret(g_session.selection.StartCaretPosition);
+        int end = clampedCaret(g_session.selection.EndCaretPosition);
+        if (end < start)
+            std::swap(start, end);
+
+        if (start == end)
+        {
+            if (start == 0)
+                return;
+            start -= 1;
+        }
+
+        g_session.text.erase(start, end - start);
+        g_session.selection.StartCaretPosition = start;
+        g_session.selection.EndCaretPosition = start;
+
+        notifyServerUpdate(true, start, end);
     }
 
     void onLayoutRequested(WTextCore::CoreTextLayoutRequestedEventArgs^ args)
@@ -335,11 +387,43 @@ namespace
             return;
 
         Windows::Foundation::Rect windowBounds = window->Bounds;
-        Windows::Foundation::Rect rect(
-            windowBounds.X,
-            windowBounds.Y + windowBounds.Height * 0.66f,
-            windowBounds.Width,
-            windowBounds.Height * 0.34f);
+
+        // Report a thin strip just above the on-screen keyboard so the OS can
+        // anchor its typing preview bubble there instead of over the keypad.
+        Windows::Foundation::Rect rect;
+        try
+        {
+            WViewMgmt::InputPane^ pane = WViewMgmt::InputPane::GetForCurrentView();
+            if (pane)
+            {
+                Windows::Foundation::Rect occluded = pane->OccludedRect;
+                if (occluded.Height > 0)
+                {
+                    const float stripHeight = 72.0f;
+                    float top = occluded.Y - stripHeight;
+                    if (top < windowBounds.Y)
+                        top = windowBounds.Y;
+
+                    rect = Windows::Foundation::Rect(
+                        windowBounds.X,
+                        top,
+                        windowBounds.Width,
+                        stripHeight);
+                }
+            }
+        }
+        catch (Platform::Exception^)
+        {
+        }
+
+        if (rect.Height <= 0)
+        {
+            rect = Windows::Foundation::Rect(
+                windowBounds.X,
+                windowBounds.Y + windowBounds.Height * 0.66f,
+                windowBounds.Width,
+                windowBounds.Height * 0.34f);
+        }
 
         bounds->ControlBounds = rect;
         bounds->TextBounds = rect;
@@ -418,6 +502,11 @@ namespace
                 case Windows::System::VirtualKey::Enter:
                     completeKeyboardSession(true);
                     break;
+                case Windows::System::VirtualKey::Back:
+                case Windows::System::VirtualKey::GamepadX:
+                    args->Handled = true;
+                    applyBackwardDelete();
+                    break;
                 case Windows::System::VirtualKey::GamepadB:
                 case Windows::System::VirtualKey::Escape:
                     completeKeyboardSession(false);
@@ -458,6 +547,8 @@ namespace
         g_session.inputPane = pane;
 
         context->NotifyFocusEnter();
+
+        notifyServerUpdate(true, 0, static_cast<int>(g_session.text.size()));
 
         bool shown = false;
         try
@@ -577,8 +668,6 @@ void KeyboardProvider::showKeyBoard(shared_ptr<RBX::Instance> instance)
     if (dm && textBox)
     {
         std::string text = textBox->getText();
-        std::wstring wstr(text.begin(), text.end());
-        Platform::String^ defaultText = ref new Platform::String(wstr.c_str());
 
         std::function<void(void)> cancelLambda = [=]() -> void
         {

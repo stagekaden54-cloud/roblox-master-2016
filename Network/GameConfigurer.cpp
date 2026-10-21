@@ -1009,9 +1009,10 @@ void StudioConfigurer::configure(RBX::Security::Identities identity, DataModel* 
 #if defined(ENABLE_XBOX_BUILD)
 	if (ScriptContext* scriptContext = dataModel->create<ScriptContext>())
 	{
-		starterScript = "XStarterScript";
-		scriptContext->addCoreScriptLocal(starterScript, shared_ptr<Instance>());
-		return;
+        if(starterScript.empty()) 
+            starterScript = "StarterScript";
+        scriptContext->addCoreScriptLocal(starterScript, shared_ptr<Instance>());
+        return;
 	}
 #endif
 

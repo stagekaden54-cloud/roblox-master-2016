@@ -152,17 +152,6 @@ namespace RBX
 			HttpResponseMessage^ httpResponse = requestTask.get();
 
 			unsigned int statusCode = static_cast<unsigned int>(httpResponse->StatusCode);
-			if (statusCode < 200 || statusCode > 299 || statusCode == 202)
-			{
-				std::string reason = "";
-				if (httpResponse->ReasonPhrase != nullptr)
-				{
-					std::wstring wReason(httpResponse->ReasonPhrase->Data());
-					reason.assign(wReason.begin(), wReason.end());
-				}
-				throw RBX::http_status_error(statusCode, reason);
-			}
-
 
 			auto contentTask = create_task(httpResponse->Content->ReadAsBufferAsync());
 			auto contentGuard = contentTask.then([](task<IBuffer^> bodyTask) {
@@ -177,6 +166,17 @@ namespace RBX
 				Windows::Security::Cryptography::CryptographicBuffer::CopyToByteArray(buffer, &bytes);
 				if (bytes != nullptr && bytes->Length > 0)
 					response.assign(reinterpret_cast<const char*>(bytes->Data), bytes->Length);
+			}
+
+			if (statusCode < 200 || statusCode > 299 || statusCode == 202)
+			{
+				std::string reason = "";
+				if (httpResponse->ReasonPhrase != nullptr)
+				{
+					std::wstring wReason(httpResponse->ReasonPhrase->Data());
+					reason.assign(wReason.begin(), wReason.end());
+				}
+				throw RBX::http_status_error(statusCode, reason);
 			}
 		}
 		catch (const http_status_error&)

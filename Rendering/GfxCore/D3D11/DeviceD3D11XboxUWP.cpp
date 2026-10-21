@@ -16,7 +16,6 @@
 #include <windows.ui.xaml.media.dxinterop.h>
 #include <windows.system.profile.h>
 #include <windows.ui.core.h>
-#include "util/standardout.h"
 
 FASTFLAG(DebugD3D11DebugMode)
 
@@ -123,8 +122,6 @@ static IDXGISwapChain* createSwapchainCoreWindow(ID3D11Device* dev, unsigned w, 
     {
         char errorBuf[256];
         sprintf_s(errorBuf, sizeof(errorBuf), "XboxUWP: Unable to create swap chain: %x", hr);
-        RBX::StandardOut::singleton()->printf(RBX::MESSAGE_ERROR,
-            "Gfx/D3D11: CreateSwapChainForCoreWindow failed hr=0x%08X", (unsigned)hr);
         throw std::runtime_error(errorBuf);
     }
 
@@ -228,9 +225,6 @@ void DeviceD3D11::createDevice()
     {
         char errorBuf[256];
         sprintf_s(errorBuf, sizeof(errorBuf), "XboxUWP: Unable to create D3D device%s: %x", arm ? " (ARM)" : "", hr);
-        RBX::StandardOut::singleton()->printf(RBX::MESSAGE_ERROR,
-            "Gfx/D3D11: D3D11CreateDevice failed hr=0x%08X arm=%d flags=0x%X",
-            (unsigned)hr, arm ? 1 : 0, flags);
         throw std::runtime_error(errorBuf);
     }
 
@@ -264,16 +258,6 @@ void DeviceD3D11::present()
 {
     if (!isSwapChainAttached() || !swapChain11)
     {
-        // Logged once: this early return is silent by design and is the most
-        // likely place for rendering to stop without raising anything.
-        static bool warnedNotAttached = false;
-        if (!warnedNotAttached)
-        {
-            warnedNotAttached = true;
-            RBX::StandardOut::singleton()->printf(RBX::MESSAGE_INFO,
-                "Gfx/D3D11: present() skipped, isSwapChainAttached=%d swapChain=%p",
-                isSwapChainAttached() ? 1 : 0, (void*)swapChain11);
-        }
         return;
     }
 
@@ -287,19 +271,7 @@ void DeviceD3D11::present()
     HRESULT hr = static_cast<IDXGISwapChain1*>(swapChain11)->Present1(1, 0, &parameters);
     if (SUCCEEDED(hr))
     {
-        static bool announcedFirstPresent = false;
         uwpNotifyFramePresented();
-    }
-    else
-    {
-        static bool warnedPresentFailed = false;
-        if (!warnedPresentFailed)
-        {
-            warnedPresentFailed = true;
-            RBX::StandardOut::singleton()->printf(RBX::MESSAGE_ERROR,
-                "Gfx/D3D11: Present1 failed hr=0x%08X (further failures not logged)",
-                (unsigned)hr);
-        }
     }
 }
 
@@ -312,9 +284,6 @@ void DeviceD3D11::resizeSwapchain()
     HRESULT hr = swapChain1->ResizeBuffers(0, dimensions.first, dimensions.second, DXGI_FORMAT_UNKNOWN, 0);
     if (FAILED(hr))
     {
-        RBX::StandardOut::singleton()->printf(RBX::MESSAGE_INFO,
-            "Gfx/D3D11: ResizeBuffers(%ux%u) failed hr=0x%08X - recreating swap chain",
-            dimensions.first, dimensions.second, (unsigned)hr);
         uwpUnmarkSwapChainAttached();
         ReleaseCheck(swapChain11);
         swapChain11 = createSwapchain(device11, dimensions.first, dimensions.second);
