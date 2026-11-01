@@ -5,7 +5,7 @@
 #include <vector>
 #include <map>
 
-#include "rbx/boost.hpp"
+#include "rbx/Boost.hpp"
 #include "rbx/threadsafe.h"
 #include "rbx/signal.h"
 #include "rbx/TaskScheduler.Job.h"

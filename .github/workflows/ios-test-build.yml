@@ -31,8 +31,23 @@ jobs:
             done
             echo '=== Dependency inventory ==='
             find fmod/iOS -maxdepth 1 -type f -print
-            echo 'External CONTRIB_PATH is not configured by this workflow.'
           } 2>&1 | tee diagnostics/environment.log
+      - name: Prepare Boost 1.55.0 headers
+        shell: bash
+        run: |
+          set -euo pipefail
+          contrib="$RUNNER_TEMP/roblox-contribs"
+          archive="$RUNNER_TEMP/boost_1_55_0.tar.bz2"
+          mkdir -p "$contrib"
+          curl --fail --location --retry 3 --proto '=https' --proto-redir '=https' https://archives.boost.io/release/1.55.0/source/boost_1_55_0.tar.bz2 -o "$archive"
+          shasum -a 256 "$archive" | tee diagnostics/boost-download.sha256
+          tar -xjf "$archive" -C "$contrib"
+          test -f "$contrib/boost_1_55_0/boost/config/user.hpp"
+          grep -Eq '^#define BOOST_VERSION 105500' "$contrib/boost_1_55_0/boost/version.hpp"
+          mkdir -p "$contrib/boost_1_55_0/include"
+          ln -s ../boost "$contrib/boost_1_55_0/include/boost"
+          echo "CONTRIB_PATH=$contrib" >> "$GITHUB_ENV"
+          echo 'Only Boost headers are supplied; other contrib dependencies remain unresolved.' | tee diagnostics/dependencies.log
       - name: Discover targets
         shell: bash
         run: |
@@ -42,7 +57,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          xcodebuild -project iOS/RobloxMobile.xcodeproj -target Roblox -configuration Debug -sdk iphoneos ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= build 2>&1 | tee diagnostics/build.log
+          xcodebuild -project iOS/RobloxMobile.xcodeproj -target Roblox -configuration Debug -sdk iphoneos "CONTRIB_PATH=$CONTRIB_PATH" ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= build 2>&1 | tee diagnostics/build.log
       - name: Upload diagnostic logs
         if: always()
         uses: actions/upload-artifact@v4
