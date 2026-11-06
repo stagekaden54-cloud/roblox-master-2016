@@ -38,16 +38,20 @@ jobs:
           set -euo pipefail
           contrib="$RUNNER_TEMP/roblox-contribs"
           archive="$RUNNER_TEMP/boost_1_55_0.tar.bz2"
+          boost_root="$contrib/boost_1_55_0"
           mkdir -p "$contrib"
           curl --fail --location --retry 3 --proto '=https' --proto-redir '=https' https://archives.boost.io/release/1.55.0/source/boost_1_55_0.tar.bz2 -o "$archive"
           shasum -a 256 "$archive" | tee diagnostics/boost-download.sha256
           tar -xjf "$archive" -C "$contrib"
-          test -f "$contrib/boost_1_55_0/boost/config/user.hpp"
-          grep -Eq '^#define BOOST_VERSION 105500' "$contrib/boost_1_55_0/boost/version.hpp"
-          mkdir -p "$contrib/boost_1_55_0/include"
-          ln -s ../boost "$contrib/boost_1_55_0/include/boost"
+          grep -Eq '^#define BOOST_VERSION 105500' "$boost_root/boost/version.hpp"
+          # This repository requires its Boost user-config marker; vanilla Boost's
+          # user.hpp is empty, so generate the minimal project-specific config.
+          printf '#pragma once\n#define ROBLOX_BOOST_CONFIGS 1\n' > "$boost_root/boost/config/user.hpp"
+          mkdir -p "$boost_root/include"
+          ln -s ../boost "$boost_root/include/boost"
+          test -f "$boost_root/include/boost/config/user.hpp"
           echo "CONTRIB_PATH=$contrib" >> "$GITHUB_ENV"
-          echo 'Only Boost headers are supplied; other contrib dependencies remain unresolved.' | tee diagnostics/dependencies.log
+          echo "Boost headers prepared at $boost_root/include" | tee diagnostics/dependencies.log
       - name: Discover targets
         shell: bash
         run: |
