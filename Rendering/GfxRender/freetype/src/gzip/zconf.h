@@ -187,7 +187,7 @@
 #    if (__BORLANDC__ >= 0x0500) && defined (WIN32)
 #      include <windows.h>
 #      define ZEXPORT(x) x __declspec(dllexport) WINAPI
-#      define ZEXPORTRVA(x)  x __declspec(dllexport) WINAPIV
+#      define ZEXPORTRVA(x) x __declspec(dllexport) WINAPIV
 #    else
 #      if defined (_Windows) && defined (__DLL__)
 #        define ZEXPORT(x) x _export
@@ -215,7 +215,8 @@
 #   define FAR
 #endif
 
-#if !defined(MACOS) && !defined(TARGET_OS_MAC)
+/* Modern Apple SDKs need this local typedef too. */
+#if (!defined(MACOS) && !defined(TARGET_OS_MAC)) || (defined(__APPLE__) && defined(__MACH__))
 typedef unsigned char  Byte;  /* 8 bits */
 #endif
 typedef unsigned int   uInt;  /* 16 bits or more */
