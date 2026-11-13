@@ -87,14 +87,50 @@ jobs:
           "zlib header: $(Test-Path (Join-Path $zlibInclude 'zlib.h'))"
           "zlib library: $(Test-Path (Join-Path $zlibLib 'zlib.lib'))"
 
+      - name: Restore pinned SDL 2.0.4 headers and x86 import library
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $archive = Join-Path $env:RUNNER_TEMP "SDL2-devel-2.0.4-VC.zip"
+          $url = "https://www.libsdl.org/release/SDL2-devel-2.0.4-VC.zip"
+          Invoke-WebRequest -Uri $url -OutFile $archive
+          $archiveHash = (Get-FileHash -Path $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          "SDL2 2.0.4 official VC archive SHA256: $archiveHash" | Tee-Object -FilePath build-logs/sdl-dependency.txt
+
+          $extract = Join-Path $env:RUNNER_TEMP "sdl-2.0.4-extract"
+          Expand-Archive -Path $archive -DestinationPath $extract -Force
+          $header = Get-ChildItem -Path $extract -Filter "SDL_scancode.h" -Recurse -File | Select-Object -First 1
+          if (-not $header) { throw "SDL2 2.0.4 archive did not contain SDL_scancode.h." }
+          $includeDir = $header.Directory.FullName
+          $sdlInclude = Join-Path $env:RUNNER_TEMP "legacy-contrib\SDL2.0.4\include"
+          New-Item -ItemType Directory -Force -Path $sdlInclude | Out-Null
+          Copy-Item -Path (Join-Path $includeDir "*") -Destination $sdlInclude -Recurse -Force
+
+          # The repository carries the matching Windows SDL2.0.4 import library.
+          $repoLib = Join-Path $env:GITHUB_WORKSPACE "SDL2\Win\2.0.4\SDL2.lib"
+          if (-not (Test-Path $repoLib)) { throw "Expected checked-in SDL2.0.4 import library is missing: $repoLib" }
+          $sdlLibDir = Join-Path $env:RUNNER_TEMP "legacy-contrib\SDL2\VisualC\Win32\Release"
+          New-Item -ItemType Directory -Force -Path $sdlLibDir | Out-Null
+          Copy-Item -Path $repoLib -Destination (Join-Path $sdlLibDir "SDL2.lib") -Force
+
+          foreach ($required in @("SDL.h", "SDL_scancode.h")) {
+            if (-not (Test-Path (Join-Path $sdlInclude $required))) { throw "SDL header staging failed: $required" }
+          }
+          "SDL headers staged: $sdlInclude" | Tee-Object -Append -FilePath build-logs/sdl-dependency.txt
+          "SDL x86 import library staged: $(Join-Path $sdlLibDir 'SDL2.lib')" | Tee-Object -Append -FilePath build-logs/sdl-dependency.txt
+
       - name: Check legacy prerequisites
         shell: pwsh
-        continue-on-error: true
         run: |
-          .\scripts\Check-WindowsClientPrerequisites.ps1 -Configuration Debug 2>&1 |
+          $ErrorActionPreference = "Stop"
+          & pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Check-WindowsClientPrerequisites.ps1 -Configuration Debug 2>&1 |
             Tee-Object -FilePath build-logs/prerequisites.txt
-          "Prerequisite checker exit code: $LASTEXITCODE" |
+          $checkerExit = $LASTEXITCODE
+          "Prerequisite checker exit code: $checkerExit" |
             Tee-Object -Append -FilePath build-logs/prerequisites.txt
+          if ($checkerExit -ne 0) {
+            throw "Required legacy dependencies are missing. MSBuild was not started; see prerequisites.txt."
+          }
 
       - name: Attempt native Debug Win32 build
         id: build
@@ -133,7 +169,10 @@ jobs:
         run: |
           if ($env:BUILD_EXIT_CODE -eq "0") {
             Write-Host "MSBuild completed successfully."
+          } elseif ([string]::IsNullOrWhiteSpace($env:BUILD_EXIT_CODE)) {
+            Write-Host "MSBuild was not attempted because prerequisite validation failed. See the uploaded logs artifact."
+            exit 1
           } else {
-            Write-Host "MSBuild did not complete successfully. See the uploaded logs artifact."
+            Write-Host "MSBuild failed with exit code $env:BUILD_EXIT_CODE. See the uploaded logs artifact."
             exit 1
           }
