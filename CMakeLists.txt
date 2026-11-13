@@ -1,10 +1,10 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.12)
 
 project(roblox C CXX ASM)
 
 if(NOT UNIX AND NOT WIN32)
   message(FATAL_ERROR "Unsupported platform.")
-endif(NOT UNIX OR NOT WIN32)
+endif()
 
 list(APPEND CMAKE_PREFIX_PATH "${CONTRIB_PATH}")
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/Modules")
@@ -65,38 +65,31 @@ include(SSL)
 include(SDL2)
 
 if(NOT RBX_SETTINGS_INITIALIZED)
-  if(UNIX)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fvisibility=hidden" CACHE STRING "" FORCE)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fvisibility=hidden" CACHE STRING "" FORCE)
+  # GCC/Clang-only flags must not be passed to MSVC.
+  if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    if(UNIX)
+      set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fvisibility=hidden" CACHE STRING "" FORCE)
+      set(CMAKE_ECLIPSE_MAKE_ARGUMENTS "-j -l4")
+    endif()
+    if(ANDROID)
+      set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mfloat-abi=softfp -MMD -MP -g" CACHE STRING "" FORCE)
+    endif()
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wno-unknown-pragmas -Wno-unused-variable -Wno-unused-local-typedefs -Wno-main" CACHE STRING "" FORCE)
+  endif()
 
-    set(CMAKE_ECLIPSE_MAKE_ARGUMENTS "-j -l4")
-  endif(UNIX)
-
-  if(ANDROID)
-    # Use the stdlib with exception handling and rtti if we're building
-    # for Android.  This is set in the configure_android script.
-
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mfloat-abi=softfp -MMD -MP" CACHE STRING "" FORCE)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mfloat-abi=softfp -MMD -MP" CACHE STRING "" FORCE)
-
-    # Because we want to use breakpad, let's even put debug symbols into our release builds.
-    # These will be stripped out by the NDK when we package up an APK.
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g" CACHE STRING "" FORCE)
-    set(CMAKE_CXX_FLAGS "${CMAKE_C_FLAGS} -g" CACHE STRING "" FORCE)
-  endif(ANDROID)
-  
-  # By default, try to get all warnings.  In the future, treat them as errors.
-  # Ignore some warnings that currently are in a lot of our code base.
-  # set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Werror" CACHE STRING "" FORCE)
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall" CACHE STRING "" FORCE)
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unknown-pragmas -Wno-unused-variable -Wno-unused-local-typedefs -Wno-main" CACHE STRING "" FORCE)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-reorder -Wno-unused-local-typedefs" CACHE STRING "" FORCE)
-
-  # Enable C++11 with GNU extensions
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++11" CACHE STRING "" FORCE)
+  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    if(UNIX)
+      set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fvisibility=hidden" CACHE STRING "" FORCE)
+    endif()
+    if(ANDROID)
+      # Keep Android-specific ABI and dependency-generation flags on C++ too.
+      set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mfloat-abi=softfp -MMD -MP -g" CACHE STRING "" FORCE)
+    endif()
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-reorder -Wno-unused-local-typedefs -std=gnu++11" CACHE STRING "" FORCE)
+  endif()
 
   set(RBX_SETTINGS_INITIALIZED TRUE CACHE INTERNAL "" FORCE)
-endif(NOT RBX_SETTINGS_INITIALIZED)
+endif()
 
 if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
   set(APPLE ON)
