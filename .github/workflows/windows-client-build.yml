@@ -31,7 +31,7 @@ jobs:
           "Visual Studio installations:" | Tee-Object -Append -FilePath build-logs/environment.txt
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           if (Test-Path $vswhere) {
-            & $vswhere -all -products * -format table | Tee-Object -Append -FilePath build-logs/environment.txt
+            & $vswhere -all -products * -format json | Tee-Object -Append -FilePath build-logs/environment.txt
           }
           "v110 toolset locations:" | Tee-Object -Append -FilePath build-logs/environment.txt
           Get-ChildItem "${env:ProgramFiles(x86)}\Microsoft Visual Studio" -Directory -ErrorAction SilentlyContinue |
