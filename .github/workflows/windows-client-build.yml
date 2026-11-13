@@ -62,6 +62,15 @@ jobs:
           $boostRoot = Join-Path $boostExtract "boost_1_56_0"
           $boostTarget = Join-Path $contrib "boost_1_56_0"
           Move-Item -Path $boostRoot -Destination $boostTarget
+
+          # This fork requires a ROBLOX_BOOST_CONFIGS marker in Boost's user config.
+          # The legacy config was not included in the repository, so provide the
+          # minimal compatibility marker in the CI dependency overlay (not game source).
+          $boostUserConfig = Join-Path $boostTarget "boost\config\user.hpp"
+          @'
+          #pragma once
+          #define ROBLOX_BOOST_CONFIGS
+          '@ | Set-Content -Path $boostUserConfig -Encoding ascii
           New-Item -ItemType Directory -Force -Path (Join-Path $boostTarget "include") | Out-Null
           New-Item -ItemType Junction -Path (Join-Path $boostTarget "include\boost") -Target (Join-Path $boostTarget "boost") | Out-Null
 
