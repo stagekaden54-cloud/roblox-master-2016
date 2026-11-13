@@ -1,0 +1,91 @@
+name: Windows Client Debug Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - modern-windows
+
+permissions:
+  contents: read
+
+jobs:
+  build-win32-debug:
+    name: Debug | Win32 (x86)
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - name: Check out modern-windows
+        uses: actions/checkout@v4
+
+      - name: Locate Visual Studio MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Record Windows build environment
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path build-logs | Out-Null
+          "Runner image: windows-2022" | Tee-Object -FilePath build-logs/environment.txt
+          "MSBuild:" | Tee-Object -Append -FilePath build-logs/environment.txt
+          (Get-Command msbuild).Source | Tee-Object -Append -FilePath build-logs/environment.txt
+          "Visual Studio installations:" | Tee-Object -Append -FilePath build-logs/environment.txt
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (Test-Path $vswhere) {
+            & $vswhere -all -products * -format table | Tee-Object -Append -FilePath build-logs/environment.txt
+          }
+          "v110 toolset locations:" | Tee-Object -Append -FilePath build-logs/environment.txt
+          Get-ChildItem "${env:ProgramFiles(x86)}\Microsoft Visual Studio" -Directory -ErrorAction SilentlyContinue |
+            ForEach-Object {
+              Get-ChildItem (Join-Path $_.FullName "MSBuild\Microsoft.Cpp") -Directory -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -match "110|v110" } |
+                Select-Object -ExpandProperty FullName
+            } | Tee-Object -Append -FilePath build-logs/environment.txt
+
+      - name: Check legacy prerequisites
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          .\scripts\Check-WindowsClientPrerequisites.ps1 -Configuration Debug 2>&1 |
+            Tee-Object -FilePath build-logs/prerequisites.txt
+          "Prerequisite checker exit code: $LASTEXITCODE" |
+            Tee-Object -Append -FilePath build-logs/prerequisites.txt
+
+      - name: Attempt native Debug Win32 build
+        id: build
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          msbuild .\Client_2012.sln /m /t:WindowsClient /p:Configuration=Debug /p:Platform=Win32 /v:minimal 2>&1 |
+            Tee-Object -FilePath build-logs/msbuild.txt
+          $code = $LASTEXITCODE
+          "MSBuild exit code: $code" | Tee-Object -Append -FilePath build-logs/msbuild.txt
+          "BUILD_EXIT_CODE=$code" | Out-File -FilePath $env:GITHUB_ENV -Append
+          exit 0
+
+      - name: Collect any generated executable
+        if: always()
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path . -Filter RobloxPlayerBetaRaw.exe -Recurse -ErrorAction SilentlyContinue |
+            ForEach-Object { Copy-Item $_.FullName -Destination build-logs -Force }
+          Get-ChildItem build-logs -File | Select-Object Name,Length
+
+      - name: Upload build logs and executable if produced
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-client-debug-win32
+          path: build-logs/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Report build result
+        if: always()
+        shell: pwsh
+        run: |
+          if ($env:BUILD_EXIT_CODE -eq "0") {
+            Write-Host "MSBuild completed successfully."
+          } else {
+            Write-Host "MSBuild did not complete successfully. See the uploaded logs artifact."
+            exit 1
+          }
