@@ -119,6 +119,82 @@ jobs:
           "SDL headers staged: $sdlInclude" | Tee-Object -Append -FilePath build-logs/sdl-dependency.txt
           "SDL x86 import library staged: $(Join-Path $sdlLibDir 'SDL2.lib')" | Tee-Object -Append -FilePath build-logs/sdl-dependency.txt
 
+      - name: Restore remaining open-source dependencies
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $contrib = $env:CONTRIB_PATH
+          if ([string]::IsNullOrWhiteSpace($contrib)) { throw "CONTRIB_PATH was not initialized." }
+
+          # OpenSSL import libraries are checked into this repository.
+          $opensslOut = Join-Path $contrib "openssl\out32"
+          New-Item -ItemType Directory -Force -Path $opensslOut | Out-Null
+          foreach ($name in @("ssleay32.lib", "libeay32.lib")) {
+            $source = Join-Path $env:GITHUB_WORKSPACE "openssl\VS2010\$name"
+            if (-not (Test-Path $source)) { throw "Checked-in OpenSSL library is missing: $source" }
+            Copy-Item $source (Join-Path $opensslOut $name) -Force
+          }
+
+          # Restore curl 7.43.0 headers and use the repository's matching VS2010 x86 library.
+          $curlZip = Join-Path $env:RUNNER_TEMP "curl-7.43.0.zip"
+          Invoke-WebRequest -Uri "https://curl.se/download/curl-7.43.0.zip" -OutFile $curlZip
+          $curlHash = (Get-FileHash $curlZip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "curl 7.43.0 archive SHA256: $curlHash" | Tee-Object -FilePath build-logs/dependencies.txt
+          $curlExtract = Join-Path $env:RUNNER_TEMP "curl-7.43.0-extract"
+          Expand-Archive $curlZip $curlExtract -Force
+          $curlHeader = Get-ChildItem $curlExtract -Filter curl.h -Recurse -File | Select-Object -First 1
+          if (-not $curlHeader) { throw "curl 7.43.0 archive did not contain curl.h." }
+          $curlRoot = $curlHeader.Directory.Parent.FullName
+          $curlTarget = Join-Path $contrib "windows\x86\curl\curl-7.43.0"
+          New-Item -ItemType Directory -Force -Path (Join-Path $curlTarget "include\curl"),(Join-Path $curlTarget "lib") | Out-Null
+          Copy-Item (Join-Path $curlRoot "include\curl\*") (Join-Path $curlTarget "include\curl") -Recurse -Force
+          $curlLib = Join-Path $env:GITHUB_WORKSPACE "curl\VS2010\libcurl_a.lib"
+          if (-not (Test-Path $curlLib)) { throw "Checked-in libcurl static library is missing: $curlLib" }
+          Copy-Item $curlLib (Join-Path $curlTarget "lib\libcurl_a.lib") -Force
+
+          # Restore the exact cpp-netlib 0.11.0 tag referenced by boost.static.vcxproj.
+          $netlibZip = Join-Path $env:RUNNER_TEMP "cpp-netlib-0.11.0.zip"
+          Invoke-WebRequest -Uri "https://github.com/cpp-netlib/cpp-netlib/archive/refs/tags/cpp-netlib-0.11.0.zip" -OutFile $netlibZip
+          $netlibHash = (Get-FileHash $netlibZip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "cpp-netlib 0.11.0 archive SHA256: $netlibHash" | Tee-Object -Append -FilePath build-logs/dependencies.txt
+          $netlibExtract = Join-Path $env:RUNNER_TEMP "cpp-netlib-extract"
+          Expand-Archive $netlibZip $netlibExtract -Force
+          $netlibUri = Get-ChildItem $netlibExtract -Filter uri.cpp -Recurse -File | Select-Object -First 1
+          if (-not $netlibUri) { throw "cpp-netlib 0.11.0 archive did not contain uri.cpp." }
+          $netlibRoot = $netlibUri.Directory.Parent.Parent.Parent.Parent.FullName
+          $netlibTarget = Join-Path $contrib "cpp-netlib-0.11.0-final"
+          Copy-Item $netlibRoot $netlibTarget -Recurse -Force
+
+          # W3C's archived 5.4.0 source distribution.
+          $wwwZip = Join-Path $env:RUNNER_TEMP "w3c-libwww-5.4.0.zip"
+          Invoke-WebRequest -Uri "https://www.w3.org/Library/Distribution/old/w3c-libwww-5.4.0.zip" -OutFile $wwwZip
+          $wwwHash = (Get-FileHash $wwwZip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "W3C libwww 5.4.0 archive SHA256: $wwwHash" | Tee-Object -Append -FilePath build-logs/dependencies.txt
+          $wwwExtract = Join-Path $env:RUNNER_TEMP "w3c-libwww-extract"
+          Expand-Archive $wwwZip $wwwExtract -Force
+          $wwwSrc = Get-ChildItem $wwwExtract -Filter Makefile -Recurse -File | Where-Object { $_.Directory.Name -eq "src" } | Select-Object -First 1
+          if (-not $wwwSrc) { throw "W3C libwww archive did not contain Library\src." }
+          $wwwRoot = $wwwSrc.Directory.Parent.Parent.FullName
+          $wwwTarget = Join-Path $contrib "w3c-libwww-5.4.0"
+          Copy-Item $wwwRoot $wwwTarget -Recurse -Force
+
+          # Use the Windows SDK installed on the hosted Windows runner.
+          $programFilesX86 = [Environment]::GetEnvironmentVariable("ProgramFiles(x86)")
+          $sdkIncludeRoot = Join-Path $programFilesX86 "Windows Kits\10\Include"
+          $sdkLibRoot = Join-Path $programFilesX86 "Windows Kits\10\Lib"
+          $sdkVersion = Get-ChildItem $sdkIncludeRoot -Directory | Sort-Object Name -Descending | Select-Object -First 1
+          if (-not $sdkVersion) { throw "No Windows 10/11 SDK include version was found." }
+          $sdkVersionName = $sdkVersion.Name
+          $sdkUm = Join-Path $sdkVersion.FullName "um"
+          $sdkLibX86 = Join-Path (Join-Path $sdkLibRoot $sdkVersionName) "um\x86"
+          if (-not (Test-Path (Join-Path $sdkUm "d3d9.h"))) { throw "Installed Windows SDK does not contain d3d9.h." }
+          if (-not (Test-Path $sdkLibX86)) { throw "Installed Windows SDK x86 library directory is missing: $sdkLibX86" }
+          $sdkTarget = Join-Path $contrib "SDK"
+          New-Item -ItemType Directory -Force -Path (Join-Path $sdkTarget "Include"),(Join-Path $sdkTarget "Lib") | Out-Null
+          Copy-Item (Join-Path $sdkUm "*") (Join-Path $sdkTarget "Include") -Recurse -Force
+          Copy-Item (Join-Path $sdkLibX86 "*") (Join-Path $sdkTarget "Lib") -Recurse -Force
+          "Staged Windows SDK $sdkVersionName x86 libraries." | Tee-Object -Append -FilePath build-logs/dependencies.txt
+
       - name: Check legacy prerequisites
         shell: pwsh
         run: |
