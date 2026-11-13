@@ -301,8 +301,9 @@ jobs:
           </Project>
           '@
           $project = $project.Replace("__SOURCE_DIR__", $dsSources)
-          $project = $project.Replace("__DXSDK_INCLUDE__", (Join-Path $env:ProgramFiles "(x86)\Microsoft DirectX SDK (June 2010)\Include"))
-          $project = $project.Replace("__DXSDK_LIB__", (Join-Path $env:ProgramFiles "(x86)\Microsoft DirectX SDK (June 2010)\Lib\x86"))
+          $dxSdkRoot = Join-Path ([Environment]::GetFolderPath("ProgramFilesX86")) "Microsoft DirectX SDK (June 2010)"
+          $project = $project.Replace("__DXSDK_INCLUDE__", (Join-Path $dxSdkRoot "Include"))
+          $project = $project.Replace("__DXSDK_LIB__", (Join-Path $dxSdkRoot "Lib\x86"))
           $project = $project.Replace("__OUT_DIR__", $dsLib)
           $project = $project.Replace("__OBJ_DIR__", $objectPath)
           Set-Content -Path $projectPath -Value $project -Encoding utf8
