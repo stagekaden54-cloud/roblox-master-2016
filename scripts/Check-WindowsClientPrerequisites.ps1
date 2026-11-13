@@ -30,7 +30,8 @@ Add-Check "TBB 4.1 headers (repository-relative)" (Join-Path $RepoRoot "TBB_4_1\
 Add-Check "Root rsc.config used by pre-build" (Join-Path $RepoRoot "rsc.config")
 Add-Check "Core script config template" (Join-Path $RepoRoot "CoreScriptConverter2\rsc.config.template") $false
 
-if ([string]::IsNullOrWhiteSpace($ContribPath)) {
+$missingContribPath = [string]::IsNullOrWhiteSpace($ContribPath)
+if ($missingContribPath) {
     Write-Host "CONTRIB_PATH is not set. Pass -ContribPath or set the environment variable." -ForegroundColor Yellow
 } else {
     $ContribPath = [System.IO.Path]::GetFullPath($ContribPath)
@@ -60,9 +61,9 @@ if ([string]::IsNullOrWhiteSpace($ContribPath)) {
     Add-Check "Telemetry SDK headers" (Join-Path $ContribPath "Telemetry\Telemetry2SDKWin32_20M\include")
     Add-Check "VMProtect SDK headers" (Join-Path $ContribPath "VMProtectWin_2.13")
     if ($Configuration -eq "Release") {
-        Add-Check "VMProtect command-line packer" (Join-Path $ContribPath "VMProtectWin_2.13\VMProtect_Con.exe") $false
-        Add-Check "VMProtect project file" (Join-Path $ContribPath "VMProtectWin_2.13\RobloxPlayer.exe.vmp") $false
-        Add-Check "VMProtect key file" (Join-Path $ContribPath "VMProtectWin_2.13\VMProtect.key") $false
+        Add-Check "VMProtect command-line packer" (Join-Path $ContribPath "VMProtectWin_2.13\VMProtect_Con.exe")
+        Add-Check "VMProtect project file" (Join-Path $ContribPath "VMProtectWin_2.13\RobloxPlayer.exe.vmp")
+        Add-Check "VMProtect key file" (Join-Path $ContribPath "VMProtectWin_2.13\VMProtect.key")
     }
 }
 
@@ -74,6 +75,9 @@ Write-Host "CONTRIB_PATH: $(if ($ContribPath) { $ContribPath } else { '<not set>
 Write-Host ""
 
 $missingRequired = 0
+if ($missingContribPath) {
+    $missingRequired++
+}
 foreach ($check in $script:Checks) {
     if ($check.Exists) {
         Write-Host ("[OK]      {0}" -f $check.Name) -ForegroundColor Green
