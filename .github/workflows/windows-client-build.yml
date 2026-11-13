@@ -223,6 +223,99 @@ jobs:
           "Staged DirectX SDK June 2010 x86 headers and libraries." |
             Tee-Object -Append -FilePath build-logs/dependencies.txt
 
+      - name: Restore and build Microsoft DirectShow base classes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $sampleRepo = Join-Path $env:RUNNER_TEMP "windows-classic-samples"
+          $samplePath = "Samples/Win7Samples/multimedia/directshow/baseclasses"
+          git clone --depth 1 --filter=blob:none --sparse https://github.com/microsoft/Windows-classic-samples.git $sampleRepo
+          if ($LASTEXITCODE -ne 0) { throw "Could not clone Microsoft's Windows Classic Samples repository." }
+          git -C $sampleRepo sparse-checkout set $samplePath
+          if ($LASTEXITCODE -ne 0) { throw "Could not retrieve the DirectShow base-class sample directory." }
+
+          $baseSource = Join-Path $sampleRepo $samplePath
+          foreach ($required in @("streams.h", "baseclasses.vcproj", "amfilter.cpp")) {
+            if (-not (Test-Path (Join-Path $baseSource $required))) {
+              throw "Microsoft DirectShow base-class source is incomplete: $required"
+            }
+          }
+
+          $dsRoot = Join-Path $env:CONTRIB_PATH "DSBaseClasses"
+          $dsSources = Join-Path $dsRoot "Sources"
+          $dsLib = Join-Path $dsRoot "Lib"
+          New-Item -ItemType Directory -Force -Path $dsSources,$dsLib | Out-Null
+          Copy-Item (Join-Path $baseSource "*") $dsSources -Recurse -Force
+
+          # Build the official Microsoft sample as an x86 Debug static library.
+          # The legacy project is a VS2005 .vcproj, so use a temporary VS2022
+          # project rather than changing or converting the repository's source.
+          $projectPath = Join-Path $env:RUNNER_TEMP "DirectShowBaseClasses.vcxproj"
+          $objectPath = Join-Path $env:RUNNER_TEMP "DirectShowBaseClasses-obj"
+          New-Item -ItemType Directory -Force -Path $objectPath | Out-Null
+          $project = @'
+          <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+            <ItemGroup Label="ProjectConfigurations">
+              <ProjectConfiguration Include="Debug|Win32">
+                <Configuration>Debug</Configuration>
+                <Platform>Win32</Platform>
+              </ProjectConfiguration>
+            </ItemGroup>
+            <PropertyGroup Label="Globals">
+              <ProjectGuid>{E8A3F6FA-AE1C-4C8E-A0B6-9C8480324EAA}</ProjectGuid>
+              <Keyword>Win32Proj</Keyword>
+              <RootNamespace>DirectShowBaseClasses</RootNamespace>
+              <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+            </PropertyGroup>
+            <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+            <PropertyGroup Label="Configuration">
+              <ConfigurationType>StaticLibrary</ConfigurationType>
+              <UseDebugLibraries>true</UseDebugLibraries>
+              <PlatformToolset>v143</PlatformToolset>
+              <CharacterSet>Unicode</CharacterSet>
+            </PropertyGroup>
+            <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+            <PropertyGroup>
+              <OutDir>__OUT_DIR__\</OutDir>
+              <IntDir>__OBJ_DIR__\</IntDir>
+            </PropertyGroup>
+            <ItemDefinitionGroup>
+              <ClCompile>
+                <WarningLevel>Level3</WarningLevel>
+                <Optimization>Disabled</Optimization>
+                <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+                <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+                <AdditionalIncludeDirectories>__SOURCE_DIR__;__DXSDK_INCLUDE__;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+              </ClCompile>
+              <Lib>
+                <OutputFile>__OUT_DIR__\strmbasd.lib</OutputFile>
+                <TargetMachine>MachineX86</TargetMachine>
+                <AdditionalDependencies>strmiids.lib;%(AdditionalDependencies)</AdditionalDependencies>
+                <AdditionalLibraryDirectories>__DXSDK_LIB__;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+              </Lib>
+            </ItemDefinitionGroup>
+            <ItemGroup>
+              <ClCompile Include="__SOURCE_DIR__\*.cpp" />
+            </ItemGroup>
+            <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+          </Project>
+          '@
+          $project = $project.Replace("__SOURCE_DIR__", $dsSources)
+          $project = $project.Replace("__DXSDK_INCLUDE__", (Join-Path $env:ProgramFiles "(x86)\Microsoft DirectX SDK (June 2010)\Include"))
+          $project = $project.Replace("__DXSDK_LIB__", (Join-Path $env:ProgramFiles "(x86)\Microsoft DirectX SDK (June 2010)\Lib\x86"))
+          $project = $project.Replace("__OUT_DIR__", $dsLib)
+          $project = $project.Replace("__OBJ_DIR__", $objectPath)
+          Set-Content -Path $projectPath -Value $project -Encoding utf8
+
+          msbuild $projectPath /m /p:Configuration=Debug /p:Platform=Win32 /v:minimal
+          $buildExit = $LASTEXITCODE
+          if ($buildExit -ne 0) { throw "DirectShow base-class Debug library build failed with exit code $buildExit." }
+          if (-not (Test-Path (Join-Path $dsLib "strmbasd.lib"))) {
+            throw "DirectShow build completed without producing strmbasd.lib."
+          }
+          "Microsoft DirectShow headers staged: $dsSources"
+          "Microsoft DirectShow Debug library built: $(Join-Path $dsLib 'strmbasd.lib')"
+
       - name: Check legacy prerequisites
         shell: pwsh
         run: |
