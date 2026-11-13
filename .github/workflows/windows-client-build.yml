@@ -26,6 +26,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path build-logs | Out-Null
           "Runner image: windows-2022" | Tee-Object -FilePath build-logs/environment.txt
+          "Source commit: $env:GITHUB_SHA" | Tee-Object -Append -FilePath build-logs/environment.txt
           "MSBuild:" | Tee-Object -Append -FilePath build-logs/environment.txt
           (Get-Command msbuild).Source | Tee-Object -Append -FilePath build-logs/environment.txt
           "Visual Studio installations:" | Tee-Object -Append -FilePath build-logs/environment.txt
