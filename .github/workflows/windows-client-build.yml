@@ -191,29 +191,37 @@ jobs:
                     $wwwTarget = Join-Path $contrib "w3c-libwww-5.4.0"
           Copy-Item $wwwRoot $wwwTarget -Recurse -Force
 
-          # Use the Windows SDK installed on the hosted Windows runner.
-          $programFilesX86 = [Environment]::GetEnvironmentVariable("ProgramFiles(x86)")
-          $sdkIncludeRoot = Join-Path $programFilesX86 "Windows Kits\10\Include"
-          $sdkLibRoot = Join-Path $programFilesX86 "Windows Kits\10\Lib"
-          # Select an installed SDK version that actually contains the Direct3D 9
-          # header. The newest SDK folder is not guaranteed to include every legacy header.
-          $sdkVersions = Get-ChildItem $sdkIncludeRoot -Directory | Sort-Object Name -Descending
-          $sdkVersion = $sdkVersions | Where-Object {
-            Test-Path (Join-Path $_.FullName "um\d3d9.h")
-          } | Select-Object -First 1
-          if (-not $sdkVersion) {
-            $available = ($sdkVersions | ForEach-Object { $_.Name }) -join ", "
-            throw "No installed Windows SDK version contains um\d3d9.h. Available include versions: $available"
+          # This 2012-era client requires the legacy DirectX SDK headers.
+          # The hosted Windows SDK image no longer ships the Direct3D 9 header.
+          $dxSdkInstaller = Join-Path $env:RUNNER_TEMP "DXSDK_Jun10.exe"
+          $dxSdkUrl = "https://download.microsoft.com/download/A/E/7/AE743F1F-632B-4809-87A9-AA1BB3458E31/DXSDK_Jun10.exe"
+          Invoke-WebRequest -Uri $dxSdkUrl -OutFile $dxSdkInstaller
+          $dxSdkHash = (Get-FileHash $dxSdkInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expectedDxSdkHash = "9f818a977c32b254af5d649a4cec269ed8762f8a49ae67a9f01101a7237ae61a"
+          if ($dxSdkHash -ne $expectedDxSdkHash) {
+            throw "DirectX SDK June 2010 SHA256 mismatch: $dxSdkHash"
           }
-          $sdkVersionName = $sdkVersion.Name
-          $sdkUm = Join-Path $sdkVersion.FullName "um"
-          $sdkLibX86 = Join-Path (Join-Path $sdkLibRoot $sdkVersionName) "um\x86"
-          if (-not (Test-Path $sdkLibX86)) { throw "Windows SDK $sdkVersionName x86 library directory is missing: $sdkLibX86" }
+          "DirectX SDK June 2010 SHA256: $dxSdkHash" | Tee-Object -Append -FilePath build-logs/dependencies.txt
+
+          $dxSdkInstall = Start-Process -FilePath $dxSdkInstaller -ArgumentList "/U" -Wait -PassThru -NoNewWindow
+          "DirectX SDK installer exit code: $($dxSdkInstall.ExitCode)" |
+            Tee-Object -Append -FilePath build-logs/dependencies.txt
+          $dxSdkRoot = Join-Path ([Environment]::GetFolderPath("ProgramFilesX86")) "Microsoft DirectX SDK (June 2010)"
+          $dxSdkInclude = Join-Path $dxSdkRoot "Include"
+          $dxSdkLibX86 = Join-Path $dxSdkRoot "Lib\x86"
+          if (-not (Test-Path (Join-Path $dxSdkInclude "d3d9.h"))) {
+            throw "DirectX SDK installer did not provide Include\d3d9.h at $dxSdkInclude."
+          }
+          if (-not (Test-Path $dxSdkLibX86)) {
+            throw "DirectX SDK x86 library directory is missing: $dxSdkLibX86"
+          }
+
           $sdkTarget = Join-Path $contrib "SDK"
           New-Item -ItemType Directory -Force -Path (Join-Path $sdkTarget "Include"),(Join-Path $sdkTarget "Lib") | Out-Null
-          Copy-Item (Join-Path $sdkUm "*") (Join-Path $sdkTarget "Include") -Recurse -Force
-          Copy-Item (Join-Path $sdkLibX86 "*") (Join-Path $sdkTarget "Lib") -Recurse -Force
-          "Staged Windows SDK $sdkVersionName x86 libraries." | Tee-Object -Append -FilePath build-logs/dependencies.txt
+          Copy-Item (Join-Path $dxSdkInclude "*") (Join-Path $sdkTarget "Include") -Recurse -Force
+          Copy-Item (Join-Path $dxSdkLibX86 "*") (Join-Path $sdkTarget "Lib") -Recurse -Force
+          "Staged DirectX SDK June 2010 x86 headers and libraries." |
+            Tee-Object -Append -FilePath build-logs/dependencies.txt
 
       - name: Check legacy prerequisites
         shell: pwsh
