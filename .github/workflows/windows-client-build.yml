@@ -153,18 +153,28 @@ jobs:
           if (-not (Test-Path $curlLib)) { throw "Checked-in libcurl static library is missing: $curlLib" }
           Copy-Item $curlLib (Join-Path $curlTarget "lib\libcurl_a.lib") -Force
 
-          # Restore the exact cpp-netlib 0.11.0 tag referenced by boost.static.vcxproj.
-          $netlibZip = Join-Path $env:RUNNER_TEMP "cpp-netlib-0.11.0.zip"
-          Invoke-WebRequest -Uri "https://github.com/cpp-netlib/cpp-netlib/archive/refs/tags/cpp-netlib-0.11.0.zip" -OutFile $netlibZip
-          $netlibHash = (Get-FileHash $netlibZip -Algorithm SHA256).Hash.ToLowerInvariant()
-          "cpp-netlib 0.11.0 archive SHA256: $netlibHash" | Tee-Object -Append -FilePath build-logs/dependencies.txt
+          # Restore the upstream cpp-netlib 0.11.0 source release from Debian's archived
+          # orig tarball. The old GitHub tag-archive URL now returns HTTP 404.
+          $netlibTar = Join-Path $env:RUNNER_TEMP "cpp-netlib_0.11.0.orig.tar.gz"
+          $netlibUrl = "https://archive.debian.org/debian/pool/main/c/cpp-netlib/cpp-netlib_0.11.0.orig.tar.gz"
+          Invoke-WebRequest -Uri $netlibUrl -OutFile $netlibTar
+          $netlibHash = (Get-FileHash $netlibTar -Algorithm SHA256).Hash.ToLowerInvariant()
+          "cpp-netlib 0.11.0 upstream source SHA256: $netlibHash" | Tee-Object -Append -FilePath build-logs/dependencies.txt
           $netlibExtract = Join-Path $env:RUNNER_TEMP "cpp-netlib-extract"
-          Expand-Archive $netlibZip $netlibExtract -Force
-          $netlibUri = Get-ChildItem $netlibExtract -Filter uri.cpp -Recurse -File | Select-Object -First 1
-          if (-not $netlibUri) { throw "cpp-netlib 0.11.0 archive did not contain uri.cpp." }
+          New-Item -ItemType Directory -Force -Path $netlibExtract | Out-Null
+          & tar.exe -xzf $netlibTar -C $netlibExtract
+          if ($LASTEXITCODE -ne 0) { throw "Could not extract cpp-netlib 0.11.0 source archive (tar exit $LASTEXITCODE)." }
+          $netlibUri = Get-ChildItem $netlibExtract -Filter "uri.cpp" -Recurse -File |
+            Where-Object { $_.FullName -match '[\\/]libs[\\/]network[\\/]src[\\/]uri[\\/]uri\.cpp$' } |
+            Select-Object -First 1
+          if (-not $netlibUri) { throw "cpp-netlib 0.11.0 archive is missing libs/network/src/uri/uri.cpp." }
           $netlibRoot = $netlibUri.Directory.Parent.Parent.Parent.Parent.FullName
+          if (-not (Test-Path (Join-Path $netlibRoot "boost\\network"))) {
+            throw "cpp-netlib source root is missing boost/network: $netlibRoot"
+          }
           $netlibTarget = Join-Path $contrib "cpp-netlib-0.11.0-final"
-          Copy-Item $netlibRoot $netlibTarget -Recurse -Force
+          New-Item -ItemType Directory -Force -Path $netlibTarget | Out-Null
+          Copy-Item (Join-Path $netlibRoot "*") $netlibTarget -Recurse -Force
 
           # W3C's archived 5.4.0 source distribution.
           $wwwZip = Join-Path $env:RUNNER_TEMP "w3c-libwww-5.4.0.zip"
