@@ -41,6 +41,43 @@ jobs:
                 Select-Object -ExpandProperty FullName
             } | Tee-Object -Append -FilePath build-logs/environment.txt
 
+      - name: Restore pinned legacy Boost and zlib dependencies
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $contrib = Join-Path $env:RUNNER_TEMP "legacy-contrib"
+          New-Item -ItemType Directory -Force -Path $contrib | Out-Null
+          "CONTRIB_PATH=$contrib" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+          # Download the exact Boost version referenced by the legacy project files.
+          $boostZip = Join-Path $env:RUNNER_TEMP "boost_1_56_0.zip"
+          $boostUrl = "https://archives.boost.io/release/1.56.0/source/boost_1_56_0.zip"
+          Invoke-WebRequest -Uri $boostUrl -OutFile $boostZip
+          $expected = "be168dd499a4929bb9e4ce8b3fc9d6d08a9d1ac2da9f51e70d1945f4acb23041"
+          $actual = (Get-FileHash -Path $boostZip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw "Boost archive SHA256 mismatch: $actual" }
+
+          $boostExtract = Join-Path $env:RUNNER_TEMP "boost-extract"
+          Expand-Archive -Path $boostZip -DestinationPath $boostExtract -Force
+          $boostRoot = Join-Path $boostExtract "boost_1_56_0"
+          $boostTarget = Join-Path $contrib "boost_1_56_0"
+          Move-Item -Path $boostRoot -Destination $boostTarget
+          New-Item -ItemType Directory -Force -Path (Join-Path $boostTarget "include") | Out-Null
+          New-Item -ItemType Junction -Path (Join-Path $boostTarget "include\boost") -Target (Join-Path $boostTarget "boost") | Out-Null
+
+          # Reuse the repository's checked-in zlib sources and x86 library.
+          $zlibTarget = Join-Path $contrib "windows\x86\zlib\zlib-1.2.8"
+          $zlibInclude = Join-Path $zlibTarget "include\zlib"
+          $zlibLib = Join-Path $zlibTarget "lib"
+          New-Item -ItemType Directory -Force -Path $zlibInclude,$zlibLib | Out-Null
+          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE "zlib\*") -Destination $zlibInclude -Recurse -Force
+          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE "zlib\zlib.lib") -Destination $zlibLib -Force
+
+          "Prepared Boost 1.56.0 and repository zlib dependencies under $contrib"
+          "Boost SHA256: $actual"
+          "zlib header: $(Test-Path (Join-Path $zlibInclude 'zlib.h'))"
+          "zlib library: $(Test-Path (Join-Path $zlibLib 'zlib.lib'))"
+
       - name: Check legacy prerequisites
         shell: pwsh
         continue-on-error: true
