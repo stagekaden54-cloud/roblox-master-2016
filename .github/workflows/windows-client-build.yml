@@ -55,7 +55,7 @@ jobs:
         shell: pwsh
         continue-on-error: true
         run: |
-           # Use the runner's installed VS2022 v143 toolset as a CI-only compatibility probe.
+          # Use the runner's installed VS2022 v143 toolset as a CI-only compatibility probe.
           # This does not rewrite project files or claim equivalence with the original v110 compiler.
           msbuild .\Client_2012.sln /m /t:WindowsClient /p:Configuration=Debug /p:Platform=Win32 /p:PlatformToolset=v143 /v:minimal 2>&1 |
             Tee-Object -FilePath build-logs/msbuild.txt
