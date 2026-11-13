@@ -195,13 +195,20 @@ jobs:
           $programFilesX86 = [Environment]::GetEnvironmentVariable("ProgramFiles(x86)")
           $sdkIncludeRoot = Join-Path $programFilesX86 "Windows Kits\10\Include"
           $sdkLibRoot = Join-Path $programFilesX86 "Windows Kits\10\Lib"
-          $sdkVersion = Get-ChildItem $sdkIncludeRoot -Directory | Sort-Object Name -Descending | Select-Object -First 1
-          if (-not $sdkVersion) { throw "No Windows 10/11 SDK include version was found." }
+          # Select an installed SDK version that actually contains the Direct3D 9
+          # header. The newest SDK folder is not guaranteed to include every legacy header.
+          $sdkVersions = Get-ChildItem $sdkIncludeRoot -Directory | Sort-Object Name -Descending
+          $sdkVersion = $sdkVersions | Where-Object {
+            Test-Path (Join-Path $_.FullName "um\d3d9.h")
+          } | Select-Object -First 1
+          if (-not $sdkVersion) {
+            $available = ($sdkVersions | ForEach-Object { $_.Name }) -join ", "
+            throw "No installed Windows SDK version contains um\d3d9.h. Available include versions: $available"
+          }
           $sdkVersionName = $sdkVersion.Name
           $sdkUm = Join-Path $sdkVersion.FullName "um"
           $sdkLibX86 = Join-Path (Join-Path $sdkLibRoot $sdkVersionName) "um\x86"
-          if (-not (Test-Path (Join-Path $sdkUm "d3d9.h"))) { throw "Installed Windows SDK does not contain d3d9.h." }
-          if (-not (Test-Path $sdkLibX86)) { throw "Installed Windows SDK x86 library directory is missing: $sdkLibX86" }
+          if (-not (Test-Path $sdkLibX86)) { throw "Windows SDK $sdkVersionName x86 library directory is missing: $sdkLibX86" }
           $sdkTarget = Join-Path $contrib "SDK"
           New-Item -ItemType Directory -Force -Path (Join-Path $sdkTarget "Include"),(Join-Path $sdkTarget "Lib") | Out-Null
           Copy-Item (Join-Path $sdkUm "*") (Join-Path $sdkTarget "Include") -Recurse -Force
