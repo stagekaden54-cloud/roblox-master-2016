@@ -197,7 +197,7 @@ jobs:
           $dxSdkUrl = "https://download.microsoft.com/download/A/E/7/AE743F1F-632B-4809-87A9-AA1BB3458E31/DXSDK_Jun10.exe"
           Invoke-WebRequest -Uri $dxSdkUrl -OutFile $dxSdkInstaller
           $dxSdkHash = (Get-FileHash $dxSdkInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
-          $expectedDxSdkHash = "9f818a977c32b254af5d649a4cec269ed8762f8a49ae67a9f01101a7237ae61a"
+          $expectedDxSdkHash = "705271dc83bfee54d9b94e028426e288d5f070784b7446d164f48ecfbb2a02cb"
           if ($dxSdkHash -ne $expectedDxSdkHash) {
             throw "DirectX SDK June 2010 SHA256 mismatch: $dxSdkHash"
           }
