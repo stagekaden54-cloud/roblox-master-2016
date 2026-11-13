@@ -145,7 +145,7 @@ jobs:
           Expand-Archive $curlZip $curlExtract -Force
           $curlHeader = Get-ChildItem $curlExtract -Filter curl.h -Recurse -File | Select-Object -First 1
           if (-not $curlHeader) { throw "curl 7.43.0 archive did not contain curl.h." }
-          $curlRoot = $curlHeader.Directory.Parent.FullName
+          $curlRoot = $curlHeader.Directory.Parent.Parent.FullName
           $curlTarget = Join-Path $contrib "windows\x86\curl\curl-7.43.0"
           New-Item -ItemType Directory -Force -Path (Join-Path $curlTarget "include\curl"),(Join-Path $curlTarget "lib") | Out-Null
           Copy-Item (Join-Path $curlRoot "include\curl\*") (Join-Path $curlTarget "include\curl") -Recurse -Force
