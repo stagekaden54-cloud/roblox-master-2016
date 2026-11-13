@@ -183,10 +183,12 @@ jobs:
           "W3C libwww 5.4.0 archive SHA256: $wwwHash" | Tee-Object -Append -FilePath build-logs/dependencies.txt
           $wwwExtract = Join-Path $env:RUNNER_TEMP "w3c-libwww-extract"
           Expand-Archive $wwwZip $wwwExtract -Force
-          $wwwSrc = Get-ChildItem $wwwExtract -Filter Makefile -Recurse -File | Where-Object { $_.Directory.Name -eq "src" } | Select-Object -First 1
-          if (-not $wwwSrc) { throw "W3C libwww archive did not contain Library\src." }
-          $wwwRoot = $wwwSrc.Directory.Parent.Parent.FullName
-          $wwwTarget = Join-Path $contrib "w3c-libwww-5.4.0"
+          $wwwLibrary = Get-ChildItem $wwwExtract -Directory -Recurse | Where-Object {
+            $_.Name -eq "Library" -and (Test-Path (Join-Path $_.FullName "src"))
+          } | Select-Object -First 1
+          if (-not $wwwLibrary) { throw "W3C libwww archive did not contain a Library\src directory." }
+          $wwwRoot = $wwwLibrary.Parent.FullName
+                    $wwwTarget = Join-Path $contrib "w3c-libwww-5.4.0"
           Copy-Item $wwwRoot $wwwTarget -Recurse -Force
 
           # Use the Windows SDK installed on the hosted Windows runner.
