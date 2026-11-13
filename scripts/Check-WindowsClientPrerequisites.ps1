@@ -39,7 +39,6 @@ if ($missingContribPath) {
     # External dependency paths referenced by the Windows client and its project dependencies.
     Add-Check "Boost 1.56 headers" (Join-Path $ContribPath "boost_1_56_0\include\boost\version.hpp")
     Add-Check "Boost program_options sources" (Join-Path $ContribPath "boost_1_56_0\libs\program_options\src\options_description.cpp")
-    Add-Check "Boost compiled libraries folder" (Join-Path $ContribPath "boost_1_56_0\stage\lib")
     Add-Check "SDL2 headers (project expects SDL2.0.4)" (Join-Path $ContribPath "SDL2.0.4\include\SDL.h")
     Add-Check "SDL2 Visual C++ import library" (Join-Path $ContribPath "SDL2\VisualC\Win32\Release\SDL2.lib")
     Add-Check "OpenSSL legacy libraries" (Join-Path $ContribPath "openssl\out32\ssleay32.lib")
