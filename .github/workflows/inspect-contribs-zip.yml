@@ -2,6 +2,9 @@ name: Inspect Contribs ZIP
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - contribs-zip-inspection
 
 permissions:
   contents: read
