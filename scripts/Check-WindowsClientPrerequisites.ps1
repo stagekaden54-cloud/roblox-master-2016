@@ -26,7 +26,11 @@ Add-Check "Shader compiler (x86)" (Join-Path $RepoRoot "Rendering\ShaderCompiler
 Add-Check "Shader compiler (x64)" (Join-Path $RepoRoot "Rendering\ShaderCompiler\ShaderCompiler_x64.exe")
 Add-Check "FMOD headers" (Join-Path $RepoRoot "fmod\include\fmod.hpp")
 Add-Check "FMOD import library" (Join-Path $RepoRoot "fmod\win32\lib\fmod_vc.lib")
-Add-Check "TBB 4.1 headers (repository-relative)" (Join-Path $RepoRoot "TBB_4_1\include\tbb\tbb.h")
+# TBB include directories remain in the legacy project settings, but the
+# Debug|Win32 configuration-aware audit found no TBB includes or API references
+# in its 1,136 active translation units and 1,334 project-listed headers.
+# Keep the project settings untouched; don't block Debug on an unreferenced SDK.
+Add-Check "TBB 4.1 headers (repository-relative)" (Join-Path $RepoRoot "TBB_4_1\include\tbb\tbb.h") ($Configuration -ne "Debug")
 Add-Check "Core script converter config used by pre-build" (Join-Path $RepoRoot "CoreScriptConverter2\tool\rsc.config")
 Add-Check "Core script config template" (Join-Path $RepoRoot "CoreScriptConverter2\rsc.config.template") $false
 
