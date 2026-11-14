@@ -393,6 +393,7 @@ jobs:
           Add-DebugWarningSuppressions "Network\Network.vcxproj" @("4267", "4838", "4477", "4996") @("_WINSOCK_DEPRECATED_NO_WARNINGS")
           Add-DebugWarningSuppressions "Log\Log.vcxproj" @("4996")
           Add-DebugWarningSuppressions "Base\Base.vcxproj" @("4996")
+          Add-DebugWarningSuppressions "App\App.vcxproj" @("4005", "4267", "4305", "4316")
       - name: Check legacy prerequisites
         shell: pwsh
         run: |
