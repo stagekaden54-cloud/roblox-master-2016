@@ -72,6 +72,26 @@ jobs:
           #pragma once
           #define ROBLOX_BOOST_CONFIGS
           '@ | Set-Content -Path $boostUserConfig -Encoding ascii
+
+          # Boost 1.56 assumes the old MSVC fpos API. Microsoft removed
+          # seekpos() and _FPOSOFF in the VS2022 STL; apply Boost iostreams PR #57
+          # to this temporary dependency copy only.
+          $boostFposConfig = Join-Path $boostTarget "boost\iostreams\detail\config\fpos.hpp"
+          $fposText = Get-Content -Path $boostFposConfig -Raw
+          $oldFposCondition = @'
+# if (defined(_YVALS) || defined(_CPPLIB_VER)) && !defined(__SGI_STL_PORT) && \
+     !defined(_STLPORT_VERSION) && !defined(__QNX__)
+'@
+          $newFposCondition = @'
+# if (defined(_YVALS) || defined(_CPPLIB_VER)) && !defined(__SGI_STL_PORT) && \
+     !defined(_STLPORT_VERSION) && !defined(__QNX__) && \
+     !(defined(BOOST_MSVC) && _MSVC_STL_VERSION >= 141)
+'@
+          if (-not $fposText.Contains($oldFposCondition)) {
+            throw "Boost 1.56 fpos configuration did not match the expected upstream patch context."
+          }
+          $fposText = $fposText.Replace($oldFposCondition, $newFposCondition)
+          Set-Content -Path $boostFposConfig -Value $fposText -Encoding ascii
           New-Item -ItemType Directory -Force -Path (Join-Path $boostTarget "include") | Out-Null
           New-Item -ItemType Junction -Path (Join-Path $boostTarget "include\boost") -Target (Join-Path $boostTarget "boost") | Out-Null
 
@@ -317,6 +337,35 @@ jobs:
           "Microsoft DirectShow headers staged: $dsSources"
           "Microsoft DirectShow Debug library built: $(Join-Path $dsLib 'strmbasd.lib')"
 
+      - name: Apply scoped VS2022 Debug compatibility settings
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $networkProject = Join-Path $env:GITHUB_WORKSPACE "Network\Network.vcxproj"
+          [xml]$networkXml = Get-Content -Path $networkProject
+          $ns = New-Object System.Xml.XmlNamespaceManager($networkXml.NameTable)
+          $ns.AddNamespace("msb", "http://schemas.microsoft.com/developer/msbuild/2003")
+          $debugGroup = $networkXml.SelectSingleNode("//msb:ItemDefinitionGroup[@Condition=\"'$(Configuration)|$(Platform)'=='Debug|Win32'\"]/msb:ClCompile", $ns)
+          if (-not $debugGroup) { throw "Network Debug|Win32 compiler settings were not found." }
+
+          $definitions = $debugGroup.SelectSingleNode("msb:PreprocessorDefinitions", $ns)
+          if (-not $definitions) { throw "Network Debug|Win32 preprocessor definitions were not found." }
+          if (-not $definitions.InnerText.Contains("_WINSOCK_DEPRECATED_NO_WARNINGS")) {
+            $definitions.InnerText = "_WINSOCK_DEPRECATED_NO_WARNINGS;" + $definitions.InnerText
+          }
+
+          $disabled = $debugGroup.SelectSingleNode("msb:DisableSpecificWarnings", $ns)
+          if (-not $disabled) {
+            $disabled = $networkXml.CreateElement("DisableSpecificWarnings", "http://schemas.microsoft.com/developer/msbuild/2003")
+            [void]$debugGroup.AppendChild($disabled)
+          }
+          $warningIds = @($disabled.InnerText -split ";" | Where-Object { $_ })
+          foreach ($id in @("4267", "4838")) {
+            if ($warningIds -notcontains $id) { $warningIds += $id }
+          }
+          $disabled.InnerText = ($warningIds -join ";")
+          $networkXml.Save($networkProject)
+          "Applied Debug|Win32-only Network compatibility settings; warning-as-error remains enabled."
       - name: Check legacy prerequisites
         shell: pwsh
         run: |
