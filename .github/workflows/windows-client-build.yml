@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - modern-windows
+      - windows-debug-vmprotect-compat
 
 permissions:
   contents: read
