@@ -25,6 +25,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force -Path build-logs | Out-Null
           $rsc = Join-Path $env:GITHUB_WORKSPACE "CoreScriptConverter2\tool\win32\rsc.exe"
           if (-not (Test-Path $rsc)) { throw "Checked-in CoreScriptConverter executable is missing: $rsc" }
           $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
