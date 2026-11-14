@@ -212,7 +212,7 @@ jobs:
           if (-not (Test-Path $wwwWindowsConfig)) {
             throw "W3C libwww Windows config.h is missing: $wwwWindowsConfig"
           }
-          Add-Content -Path $wwwWindowsConfig -Value "\`r\`n#undef HT_POSIX_REGEX\`r\`n#undef HAVE_REGEX_H" -Encoding Ascii
+          Add-Content -Path $wwwWindowsConfig -Value "`r`n#undef HT_POSIX_REGEX`r`n#undef HAVE_REGEX_H" -Encoding Ascii
           $wwwConfigText = Get-Content -Path $wwwWindowsConfig -Raw
           if ($wwwConfigText -notmatch '(?m)^#undef HT_POSIX_REGEX\s*$' -or
               $wwwConfigText -notmatch '(?m)^#undef HAVE_REGEX_H\s*$') {
