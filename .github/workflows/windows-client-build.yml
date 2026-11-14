@@ -316,6 +316,22 @@ jobs:
           New-Item -ItemType Directory -Force -Path (Join-Path $sdkTarget "Include"),(Join-Path $sdkTarget "Lib") | Out-Null
           Copy-Item (Join-Path $dxSdkInclude "*") (Join-Path $sdkTarget "Include") -Recurse -Force
           Copy-Item (Join-Path $dxSdkLibX86 "*") (Join-Path $sdkTarget "Lib") -Recurse -Force
+
+          # June 2010 renamed the legacy DirectX 9 error library from DxErr9.lib
+          # to DxErr.lib. Keep the old project dependency name available in this
+          # CI-only SDK overlay by providing the documented compatibility alias.
+          $dxErrSource = Join-Path $sdkTarget "Lib\DxErr.lib"
+          $dxErrLegacyAlias = Join-Path $sdkTarget "Lib\DxErr9.lib"
+          if (-not (Test-Path $dxErrSource -PathType Leaf)) {
+            throw "DirectX SDK June 2010 is missing the expected DxErr.lib: $dxErrSource"
+          }
+          Copy-Item -Path $dxErrSource -Destination $dxErrLegacyAlias -Force
+          if (-not (Test-Path $dxErrLegacyAlias -PathType Leaf)) {
+            throw "Could not stage the legacy DxErr9.lib compatibility alias."
+          }
+          "Staged DxErr.lib as DxErr9.lib for the legacy project dependency." |
+            Tee-Object -Append -FilePath build-logs/dependencies.txt
+
           "Staged DirectX SDK June 2010 x86 headers and libraries." |
             Tee-Object -Append -FilePath build-logs/dependencies.txt
 
