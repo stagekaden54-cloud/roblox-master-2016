@@ -335,6 +335,16 @@ def project_graph(start: Path):
 def scan_selected_sources(source_files, listed_headers):
     patterns = {
         "tbb_includes": re.compile(r'#\s*include\s*[<"](?:tbb/[^>"]+|tbb\.h)[>"]', re.I),
+        # Detect API use even when headers are included indirectly. These are
+        # source-reference indicators, not proof of post-preprocessor use.
+        "tbb_api_mentions": re.compile(
+            r"\\btbb\\s*::|\\b(?:concurrent_(?:hash_map|map|queue|vector|priority_queue|bounded_queue)|"
+            r"parallel_(?:for|_reduce|_scan|_invoke)|blocked_range(?:2d|3d)?|"
+            r"task_scheduler_init|task_group|task_arena|enumerable_thread_specific|"
+            r"scalable_(?:malloc|free|realloc|calloc)|tbbmalloc)\\b",
+            re.I,
+        ),
+        "tbb_general_mentions": re.compile(r"\\bTBB(?:_4_1|_VERSION|MALLOC)?\\b", re.I),
         "telemetry_mentions": re.compile(r"Telemetry2SDK|TelemetryClient|Telemetry", re.I),
         "vmprotect_mentions": re.compile(r"VMProtectSDK\.h|VMProtect[A-Za-z0-9_]*\s*\(", re.I),
         "vmprotect_guards": re.compile(r"^\s*#\s*(?:if|ifdef|ifndef|elif).*(?:VMProtect|VMP)", re.I | re.M),
