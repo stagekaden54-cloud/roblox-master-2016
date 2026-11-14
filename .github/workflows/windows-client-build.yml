@@ -411,6 +411,34 @@ jobs:
           $httpSourceText = $httpSourceText.Replace($httpInclude, $httpInclude + "`r`n#undef PARSE_ANCHOR")
           Set-Content -Path $httpSourcePath -Value $httpSourceText -Encoding utf8
           "Applied CI-only W3C PARSE_ANCHOR macro collision fix to App/util/Shared/Http.cpp."
+      - name: Instrument CoreScriptConverter in CI workspace
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $batchPath = Join-Path $env:GITHUB_WORKSPACE "CoreScriptConverter2\tool\win32\BuildCoreScripts.bat"
+          if (-not (Test-Path $batchPath)) { throw "CoreScriptConverter batch file is missing: $batchPath" }
+          $batch = Get-Content -Path $batchPath -Raw
+          $original = "rsc.exe --rscloc %1 --verbose"
+          $diagnostic = @'
+          ECHO CoreScriptConverter working directory: %CD%
+          ECHO CoreScriptConverter config argument: %~f1
+          rsc.exe --rscloc %1 --verbose
+          SET RSC_EXIT_CODE=%ERRORLEVEL%
+          ECHO CoreScriptConverter exit code: %RSC_EXIT_CODE%
+          IF NOT "%RSC_EXIT_CODE%"=="0" EXIT /b %RSC_EXIT_CODE%
+          IF NOT EXIST "%~dp0..\..\..\App\script\LuaGenCSNew.inl" (
+            ECHO ERROR: CoreScriptConverter returned success but LuaGenCSNew.inl was not created at the expected repository path.
+            EXIT /b 91
+          )
+          ECHO Generated LuaGenCSNew.inl exists.
+          '@
+          if ([regex]::Matches($batch, [regex]::Escape($original)).Count -ne 1) {
+            throw "Expected exactly one CoreScriptConverter invocation; refusing to patch an unexpected batch file."
+          }
+          $batch = $batch.Replace($original, $diagnostic.TrimEnd())
+          Set-Content -Path $batchPath -Value $batch -Encoding ascii
+          "Applied CI-only CoreScriptConverter diagnostics. Tracked batch file remains unchanged."
+          
       - name: Check legacy prerequisites
         shell: pwsh
         run: |
