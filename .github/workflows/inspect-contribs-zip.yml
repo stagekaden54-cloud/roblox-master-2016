@@ -1,0 +1,64 @@
+name: Inspect Contribs ZIP
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - name: Download Contribs ZIP to temporary runner storage
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $page = "https://www.mediafire.com/file/2srfgcurru99dfu/Contribs.zip/file?action=check&dkey=2srfgcurru99dfu"
+          Write-Host "Fetching MediaFire download page..."
+          $response = Invoke-WebRequest -Uri $page -MaximumRedirection 10
+          $html = $response.Content
+          $match = [regex]::Match($html, 'https?://download\d+\.mediafire\.com/[^"''\s<>]+')
+          if (-not $match.Success) {
+            $match = [regex]::Match($html, 'href="(https?://[^"]+)"[^>]*id="downloadButton"')
+            if ($match.Success) { $downloadUrl = $match.Groups[1].Value }
+          } else {
+            $downloadUrl = $match.Value
+          }
+          if (-not $downloadUrl) {
+            Write-Error "Could not locate a direct MediaFire download URL in the page. No archive was downloaded."
+          }
+          Write-Host "Downloading archive to ephemeral runner storage..."
+          Invoke-WebRequest -Uri $downloadUrl -OutFile "$env:RUNNER_TEMP\Contribs.zip"
+          $item = Get-Item "$env:RUNNER_TEMP\Contribs.zip"
+          Write-Host ("Downloaded bytes: " + $item.Length)
+          if ($item.Length -lt 100000000) { Write-Error "Downloaded file is unexpectedly small; refusing to inspect it." }
+      - name: List matching archive entries without extracting
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          @'
+          import zipfile, os, sys
+          p = os.path.join(os.environ["RUNNER_TEMP"], "Contribs.zip")
+          print("Opening ZIP directory only; no files will be extracted.")
+          with zipfile.ZipFile(p) as z:
+              names = z.namelist()
+              print("Total archive entries:", len(names))
+              matches = [n for n in names if "vmprotect" in n.lower()]
+              if matches:
+                  print("VMProtect-related entries:")
+                  for n in matches[:200]:
+                      print(n)
+              else:
+                  print("No VMProtect-named entries found.")
+              for target in ("VMProtectSDK.h", "VMProtectSDK32.lib"):
+                  hits = [n for n in names if n.lower().endswith(target.lower())]
+                  print(target + ":", hits[:20] if hits else "NOT FOUND")
+          '@ | Set-Content "$env:RUNNER_TEMP\inspect_zip.py" -Encoding UTF8
+          python "$env:RUNNER_TEMP\inspect_zip.py"
+      - name: Remove temporary archive
+        if: always()
+        shell: pwsh
+        run: |
+          Remove-Item "$env:RUNNER_TEMP\Contribs.zip" -Force -ErrorAction SilentlyContinue
