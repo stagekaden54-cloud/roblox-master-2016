@@ -26,10 +26,13 @@ Add-Check "Shader compiler (x86)" (Join-Path $RepoRoot "Rendering\ShaderCompiler
 Add-Check "Shader compiler (x64)" (Join-Path $RepoRoot "Rendering\ShaderCompiler\ShaderCompiler_x64.exe")
 Add-Check "FMOD headers" (Join-Path $RepoRoot "fmod\include\fmod.hpp")
 Add-Check "FMOD import library" (Join-Path $RepoRoot "fmod\win32\lib\fmod_vc.lib")
-# TBB is required by active Debug|Win32 code, including scalable allocation
-# calls in Base/rbx/Memory.cpp. Keep this check blocking until a compatible SDK
-# is restored; do not silently compile without the allocator implementation.
-Add-Check "TBB 4.1 headers (repository-relative)" (Join-Path $RepoRoot "TBB_4_1\include\tbb\tbb.h")
+# The only compiled-source TBB API references are inside
+# RBX_MEMORY_SCALABLE_MALLOC blocks in Base/rbx/Memory.cpp. That macro is
+# commented out in Base/include/rbx/Memory.h and absent from active Debug|Win32
+# preprocessor definitions. The other TBB mention is a comment saying TBB is
+# no longer used. Keep the legacy include/library paths untouched, but don't
+# block Debug on an SDK whose code paths are disabled in this configuration.
+Add-Check "TBB 4.1 headers (repository-relative)" (Join-Path $RepoRoot "TBB_4_1\include\tbb\tbb.h") ($Configuration -ne "Debug")
 Add-Check "Core script converter config used by pre-build" (Join-Path $RepoRoot "CoreScriptConverter2\tool\rsc.config")
 Add-Check "Core script config template" (Join-Path $RepoRoot "CoreScriptConverter2\rsc.config.template") $false
 
