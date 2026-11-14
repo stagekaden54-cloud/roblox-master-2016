@@ -58,6 +58,36 @@ def project_inventory(path):
             out["active_property_groups" if tag == "PropertyGroup" else "active_item_definitions"].append(entry)
     return out
 
+def project_graph(start_paths):
+    """Follow active, repository-local ProjectReference edges from the client project."""
+    queue = list(start_paths)
+    seen = set()
+    results = []
+    while queue:
+        path = queue.pop(0).resolve()
+        if path in seen:
+            continue
+        seen.add(path)
+        try:
+            item = project_inventory(path)
+        except ET.ParseError as e:
+            item = {"path": str(path.relative_to(ROOT)), "xml_error": str(e)}
+        results.append(item)
+        for ref in item.get("project_references", []):
+            if not ref.get("condition_matches_debug_win32"):
+                continue
+            include = ref.get("include")
+            if not include or "$(" in include:
+                continue
+            child = (path.parent / include.replace("\\\\", "/").replace("\\", "/")).resolve()
+            try:
+                child.relative_to(ROOT.resolve())
+            except ValueError:
+                continue
+            if child.suffix.lower() == ".vcxproj" and child.exists():
+                queue.append(child)
+    return results
+
 def scan_sources():
     hits = {k: [] for k in ("tbb_includes", "telemetry_mentions", "vmprotect_mentions", "vmprotect_guards")}
     patterns = {
@@ -82,11 +112,7 @@ def scan_sources():
     return hits
 
 def main():
-    projects = []
-    for p in (ROOT / "WindowsClient/WindowsClient.vcxproj",
-              ROOT / "Base/Base.vcxproj"):
-        try: projects.append(project_inventory(p))
-        except ET.ParseError as e: projects.append({"path": str(p.relative_to(ROOT)), "xml_error": str(e)})
+    projects = project_graph([ROOT / "WindowsClient/WindowsClient.vcxproj"])
     result = {
         "audit_type": "static configuration-aware inventory; not a build",
         "configuration": CONFIG,
