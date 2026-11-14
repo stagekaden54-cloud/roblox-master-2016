@@ -518,6 +518,36 @@ jobs:
             throw "Required legacy dependencies are missing. MSBuild was not started; see prerequisites.txt."
           }
 
+      - name: Build and stage RbxDebug runtime dependency
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          # WindowsClient's PublishDLLDependency entries expect this project-local
+          # location, while RbxDebug.vcxproj writes to $(SolutionDir)bin\Debug.
+          # Build the DLL explicitly, then stage the outputs without changing source.
+          msbuild .\RbxDebug\RbxDebug.vcxproj /m /p:Configuration=Debug /p:Platform=Win32 /p:PlatformToolset=v143 /v:minimal
+          $buildExit = $LASTEXITCODE
+          if ($buildExit -ne 0) { throw "RbxDebug Debug|Win32 build failed with exit code $buildExit." }
+
+          $sourceDir = Join-Path $env:GITHUB_WORKSPACE "bin\Debug"
+          $targetDir = Join-Path $env:GITHUB_WORKSPACE "RbxDebug\bin\Debug"
+          foreach ($name in @("RbxDebug.dll", "RbxDebug.pdb")) {
+            $source = Join-Path $sourceDir $name
+            if (-not (Test-Path $source -PathType Leaf)) {
+              throw "RbxDebug build did not produce the expected output: $source"
+            }
+          }
+          New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+          Copy-Item (Join-Path $sourceDir "RbxDebug.dll") $targetDir -Force
+          Copy-Item (Join-Path $sourceDir "RbxDebug.pdb") $targetDir -Force
+          foreach ($name in @("RbxDebug.dll", "RbxDebug.pdb")) {
+            $staged = Join-Path $targetDir $name
+            if (-not (Test-Path $staged -PathType Leaf)) {
+              throw "RbxDebug dependency staging failed: $staged"
+            }
+            "Verified staged RbxDebug output: $staged"
+          }
+
       - name: Attempt native Debug Win32 build
         id: build
         shell: pwsh
