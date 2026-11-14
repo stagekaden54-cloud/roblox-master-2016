@@ -57,8 +57,16 @@ if ($missingContribPath) {
     Add-Check "libcurl static library" (Join-Path $ContribPath "windows\x86\curl\curl-7.43.0\lib\libcurl_a.lib")
     Add-Check "cpp-netlib sources" (Join-Path $ContribPath "cpp-netlib-0.11.0-final\libs\network\src\uri\uri.cpp")
     Add-Check "W3C libwww source folder" (Join-Path $ContribPath "w3c-libwww-5.4.0\Library\src")
-    Add-Check "Telemetry SDK headers" (Join-Path $ContribPath "Telemetry\Telemetry2SDKWin32_20M\include")
-    Add-Check "VMProtect SDK headers" (Join-Path $ContribPath "VMProtectWin_2.13")
+    # The Debug|Win32 source audit found no Telemetry references in the active
+    # translation units or listed headers. Keep the configured include path visible,
+    # but do not block Debug on an SDK that is not demonstrated to be used.
+    $debugOnlyOptional = ($Configuration -eq "Debug")
+    Add-Check "Telemetry SDK headers" (Join-Path $ContribPath "Telemetry\Telemetry2SDKWin32_20M\include") (-not $debugOnlyOptional)
+
+    # VMProtect references in the Debug|Win32 source set are guarded by
+    # I_AM_GOY_THAT_LOVES_VMPROTECT, which is absent from active Debug definitions.
+    # Keep the SDK mandatory for NoOpt/Release; do not disable protection code.
+    Add-Check "VMProtect SDK headers" (Join-Path $ContribPath "VMProtectWin_2.13") (-not $debugOnlyOptional)
     if ($Configuration -eq "Release") {
         Add-Check "VMProtect command-line packer" (Join-Path $ContribPath "VMProtectWin_2.13\VMProtect_Con.exe")
         Add-Check "VMProtect project file" (Join-Path $ContribPath "VMProtectWin_2.13\RobloxPlayer.exe.vmp")
