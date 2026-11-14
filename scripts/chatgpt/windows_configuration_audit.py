@@ -84,7 +84,7 @@ def split_boolean(expr: str, operator: str):
         if quote:
             if ch == quote:
                 quote = None
-        elif ch in "'""":
+        elif ch in ("'", '"'):
             quote = ch
         elif ch == "(":
             depth += 1
