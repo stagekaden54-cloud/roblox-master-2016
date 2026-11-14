@@ -1,0 +1,40 @@
+name: Windows Configuration-Aware Dependency Audit
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [modern-windows]
+    paths:
+      - "scripts/chatgpt/windows_configuration_audit.py"
+      - "WindowsClient/**"
+      - "Base/**"
+      - "**/*.vcxproj"
+      - "**/*.props"
+      - "**/*.targets"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Debug Win32 dependency inventory (not a build)
+    runs-on: windows-2022
+    steps:
+      - name: Check out modern-windows
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run static configuration-aware audit
+        shell: pwsh
+        run: |
+          python scripts/chatgpt/windows_configuration_audit.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload audit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-configuration-audit
+          path: windows-configuration-audit.json
+          if-no-files-found: error
+          retention-days: 14
