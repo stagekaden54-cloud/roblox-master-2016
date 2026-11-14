@@ -58,8 +58,35 @@ def project_inventory(path):
             out["active_property_groups" if tag == "PropertyGroup" else "active_item_definitions"].append(entry)
     return out
 
+def resolve_project_reference(project_path, include):
+    """Resolve MSBuild Windows-style paths and expose failures instead of dropping them."""
+    normalized = include.replace("\\", "/")
+    candidate = (project_path.parent / normalized).resolve()
+    try:
+        candidate.relative_to(ROOT.resolve())
+    except ValueError:
+        return None, "outside_repository"
+    if candidate.exists():
+        return candidate, "resolved"
+    # GitHub-hosted Windows builds are case-insensitive; this fallback also makes
+    # local Linux runs behave consistently when a legacy include has casing drift.
+    current = ROOT.resolve()
+    try:
+        relative = candidate.relative_to(current)
+    except ValueError:
+        return None, "outside_repository"
+    for part in relative.parts:
+        if not current.is_dir():
+            return None, "missing_path_component"
+        matches = [p for p in current.iterdir() if p.name.lower() == part.lower()]
+        if len(matches) != 1:
+            return None, "missing_or_ambiguous_path_component"
+        current = matches[0]
+    return (current, "resolved") if current.exists() else (None, "missing_file")
+
+
 def project_graph(start_paths):
-    """Follow active, repository-local ProjectReference edges from the client project."""
+    """Follow active repository-local ProjectReference edges and retain resolution diagnostics."""
     queue = list(start_paths)
     seen = set()
     results = []
@@ -78,13 +105,12 @@ def project_graph(start_paths):
                 continue
             include = ref.get("include")
             if not include or "$(" in include:
+                ref["resolution"] = "property_based_path_not_resolved"
                 continue
-            child = (path.parent / include.replace("\\\\", "/").replace("\\", "/")).resolve()
-            try:
-                child.relative_to(ROOT.resolve())
-            except ValueError:
-                continue
-            if child.suffix.lower() == ".vcxproj" and child.exists():
+            child, status = resolve_project_reference(path, include)
+            ref["resolution"] = status
+            ref["resolved_path"] = child.relative_to(ROOT).as_posix() if child else None
+            if child and child.suffix.lower() == ".vcxproj" and child not in seen:
                 queue.append(child)
     return results
 
@@ -111,6 +137,26 @@ def scan_sources():
                 if item not in hits[key]: hits[key].append(item)
     return hits
 
+def scan_build_metadata():
+    """Find dependency tokens in project/build metadata as well as C++ source."""
+    patterns = re.compile(r"TBB|Telemetry|VMProtect|DSBaseClasses|DirectShow", re.I)
+    hits = []
+    for p in ROOT.rglob("*"):
+        if not p.is_file() or p.suffix.lower() not in {".vcxproj", ".props", ".targets"}:
+            continue
+        if any(part in {".git", "packages", "node_modules"} for part in p.parts):
+            continue
+        try:
+            lines = p.read_text(encoding="utf-8", errors="ignore").splitlines()
+        except OSError:
+            continue
+        for number, line in enumerate(lines, 1):
+            if patterns.search(line):
+                hits.append({"file": p.relative_to(ROOT).as_posix(), "line": number,
+                             "text": line.strip()[:240]})
+    return hits
+
+
 def main():
     projects = project_graph([ROOT / "WindowsClient/WindowsClient.vcxproj"])
     result = {
@@ -121,9 +167,11 @@ def main():
         "expected_output": "RobloxPlayerBetaRaw.exe",
         "project_inventory": projects,
         "source_reference_scan": scan_sources(),
+        "build_metadata_dependency_scan": scan_build_metadata(),
         "limitations": [
             "MSBuild property expansion and imported .props/.targets evaluation are not performed.",
             "Preprocessor branches are reported, not evaluated by a compiler.",
+            "Project-reference resolution is repository-local and does not evaluate MSBuild property-based paths or imported build logic.",
             "A source mention does not prove the file is compiled in Debug|Win32.",
             "No proprietary SDKs are downloaded and no protection features are disabled.",
             "This audit does not compile, link, or produce an executable."
