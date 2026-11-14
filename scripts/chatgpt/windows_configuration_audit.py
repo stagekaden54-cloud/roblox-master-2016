@@ -115,14 +115,14 @@ def condition_result(condition: str, props: dict, base_dir: Path):
         values = [condition_result(p, props, base_dir) for p in parts]
         return False if False in values else (None if None in values else True)
 
-    exists = re.fullmatch(r"\s*Exists\(\s*(['""])(.*?)\1\s*\)\s*", expr, re.I)
+    exists = re.fullmatch(r"\s*Exists\(\s*(['\"])(.*?)\1\s*\)\s*", expr, re.I)
     if exists:
         target = Path(exists.group(2))
         if not target.is_absolute():
             target = base_dir / target
         return target.exists()
 
-    comparison = re.fullmatch(r"\s*(['""])(.*?)\1\s*(==|!=)\s*(['""])(.*?)\4\s*", expr)
+    comparison = re.fullmatch(r"\s*(['\"])(.*?)\1\s*(==|!=)\s*(['\"])(.*?)\4\s*", expr)
     if comparison:
         left, op, right = comparison.group(2), comparison.group(3), comparison.group(5)
         equal = left.strip().lower() == right.strip().lower()
@@ -334,7 +334,7 @@ def project_graph(start: Path):
 
 def scan_selected_sources(source_files, listed_headers):
     patterns = {
-        "tbb_includes": re.compile(r"#\s*include\s*[<""](?:tbb/[^>""]+|tbb\.h)[>""]", re.I),
+        "tbb_includes": re.compile(r'#\s*include\s*[<"](?:tbb/[^>"]+|tbb\.h)[>"]', re.I),
         "telemetry_mentions": re.compile(r"Telemetry2SDK|TelemetryClient|Telemetry", re.I),
         "vmprotect_mentions": re.compile(r"VMProtectSDK\.h|VMProtect[A-Za-z0-9_]*\s*\(", re.I),
         "vmprotect_guards": re.compile(r"^\s*#\s*(?:if|ifdef|ifndef|elif).*(?:VMProtect|VMP)", re.I | re.M),
