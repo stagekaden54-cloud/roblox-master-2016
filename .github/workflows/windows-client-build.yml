@@ -78,15 +78,8 @@ jobs:
           # to this temporary dependency copy only.
           $boostFposConfig = Join-Path $boostTarget "boost\iostreams\detail\config\fpos.hpp"
           $fposText = (Get-Content -Path $boostFposConfig -Raw) -replace "`r`n", "`n"
-          $oldFposCondition = @'
-# if (defined(_YVALS) || defined(_CPPLIB_VER)) && !defined(__SGI_STL_PORT) && \
-     !defined(_STLPORT_VERSION) && !defined(__QNX__)
-'@
-          $newFposCondition = @'
-# if (defined(_YVALS) || defined(_CPPLIB_VER)) && !defined(__SGI_STL_PORT) && \
-     !defined(_STLPORT_VERSION) && !defined(__QNX__) && \
-     !(defined(BOOST_MSVC) && _MSVC_STL_VERSION >= 141)
-'@
+          $oldFposCondition = '# if (defined(_YVALS) || defined(_CPPLIB_VER)) && !defined(__SGI_STL_PORT) && \' + "`n" + '     !defined(_STLPORT_VERSION) && !defined(__QNX__)' + "`n"
+          $newFposCondition = '# if (defined(_YVALS) || defined(_CPPLIB_VER)) && !defined(__SGI_STL_PORT) && \' + "`n" + '     !defined(_STLPORT_VERSION) && !defined(__QNX__) && \' + "`n" + '     !(defined(BOOST_MSVC) && _MSVC_STL_VERSION >= 141)' + "`n"
           if (-not $fposText.Contains($oldFposCondition)) {
             throw "Boost 1.56 fpos configuration did not match the expected upstream patch context."
           }
