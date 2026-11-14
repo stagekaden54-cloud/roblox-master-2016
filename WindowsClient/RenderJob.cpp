@@ -14,7 +14,9 @@
 #include "v8datamodel/Workspace.h"
 #include "View.h"
 
+#if !defined(_DEBUG)
 #include "VMProtectSDK.h"
+#endif
 
 FASTFLAG(RenderLowLatencyLoop)
 
@@ -110,7 +112,9 @@ TaskScheduler::StepResult RenderJob::stepDataModelJob(const Stats& stats)
 
 	// Enable security checks for speedhack and attached debugger in release mode
 #if !defined(LOVE_ALL_ACCESS) && !defined(RBX_STUDIO_BUILD) && !defined(_NOOPT) && !defined(DEBUG)
+	#if !defined(_DEBUG)
 	VMProtectBeginMutation("34");
+	#endif
 	if (Time::isSpeedCheater())
 	{
 		dm->submitTask(boost::bind(&reportHacker, boost::weak_ptr<DataModel>(dm),
@@ -121,7 +125,9 @@ TaskScheduler::StepResult RenderJob::stepDataModelJob(const Stats& stats)
 		dm->submitTask(boost::bind(&reportHacker, boost::weak_ptr<DataModel>(dm),
 			"suzanne"), DataModelJob::Write);
 	}
+	#if !defined(_DEBUG)
 	VMProtectEnd();
+	#endif
 #endif
 
 	double timeJobStart = Time::nowFastSec();
