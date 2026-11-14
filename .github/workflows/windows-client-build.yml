@@ -371,7 +371,7 @@ jobs:
             }
             $disabled.InnerText = ($existingIds -join ";")
             $projectXml.Save($projectPath)
-            "Applied Debug|Win32-only warning compatibility settings to $relativePath: $($warningIds -join ', ')"
+            "Applied Debug|Win32-only warning compatibility settings to ${relativePath}: $($warningIds -join ', ')"
           }
 
           Add-DebugWarningSuppressions "Network\Network.vcxproj" @("4267", "4838", "4477") @("_WINSOCK_DEPRECATED_NO_WARNINGS")
