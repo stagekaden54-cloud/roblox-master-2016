@@ -334,36 +334,48 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $networkProject = Join-Path $env:GITHUB_WORKSPACE "Network\Network.vcxproj"
-          [xml]$networkXml = Get-Content -Path $networkProject
-          $ns = New-Object System.Xml.XmlNamespaceManager($networkXml.NameTable)
-          $ns.AddNamespace("msb", "http://schemas.microsoft.com/developer/msbuild/2003")
+          $namespace = "http://schemas.microsoft.com/developer/msbuild/2003"
           $debugCondition = '''$(Configuration)|$(Platform)''==''Debug|Win32'''
-          $debugItemDefinition = $networkXml.SelectNodes("//msb:ItemDefinitionGroup", $ns) |
-            Where-Object { $_.GetAttribute("Condition") -eq $debugCondition } |
-            Select-Object -First 1
-          if (-not $debugItemDefinition) { throw "Network Debug|Win32 item definition group was not found." }
-          $debugGroup = $debugItemDefinition.SelectSingleNode("msb:ClCompile", $ns)
-          if (-not $debugGroup) { throw "Network Debug|Win32 compiler settings were not found." }
 
-          $definitions = $debugGroup.SelectSingleNode("msb:PreprocessorDefinitions", $ns)
-          if (-not $definitions) { throw "Network Debug|Win32 preprocessor definitions were not found." }
-          if (-not $definitions.InnerText.Contains("_WINSOCK_DEPRECATED_NO_WARNINGS")) {
-            $definitions.InnerText = "_WINSOCK_DEPRECATED_NO_WARNINGS;" + $definitions.InnerText
+          function Add-DebugWarningSuppressions([string]$relativePath, [string[]]$warningIds, [string[]]$definitionsToAdd = @()) {
+            $projectPath = Join-Path $env:GITHUB_WORKSPACE $relativePath
+            if (-not (Test-Path $projectPath)) { throw "Expected project file not found: $relativePath" }
+            [xml]$projectXml = Get-Content -Path $projectPath
+            $ns = New-Object System.Xml.XmlNamespaceManager($projectXml.NameTable)
+            $ns.AddNamespace("msb", $namespace)
+            $itemDefinition = $projectXml.SelectNodes("//msb:ItemDefinitionGroup", $ns) |
+              Where-Object { $_.GetAttribute("Condition") -eq $debugCondition } |
+              Select-Object -First 1
+            if (-not $itemDefinition) { throw "Debug|Win32 item definition group was not found in $relativePath." }
+            $compile = $itemDefinition.SelectSingleNode("msb:ClCompile", $ns)
+            if (-not $compile) { throw "Debug|Win32 compiler settings were not found in $relativePath." }
+
+            if ($definitionsToAdd.Count -gt 0) {
+              $definitions = $compile.SelectSingleNode("msb:PreprocessorDefinitions", $ns)
+              if (-not $definitions) { throw "PreprocessorDefinitions were not found in $relativePath." }
+              foreach ($definition in $definitionsToAdd) {
+                if (-not $definitions.InnerText.Contains($definition)) {
+                  $definitions.InnerText = $definition + ";" + $definitions.InnerText
+                }
+              }
+            }
+
+            $disabled = $compile.SelectSingleNode("msb:DisableSpecificWarnings", $ns)
+            if (-not $disabled) {
+              $disabled = $projectXml.CreateElement("DisableSpecificWarnings", $namespace)
+              [void]$compile.AppendChild($disabled)
+            }
+            $existingIds = @($disabled.InnerText -split ";" | Where-Object { $_ })
+            foreach ($id in $warningIds) {
+              if ($existingIds -notcontains $id) { $existingIds += $id }
+            }
+            $disabled.InnerText = ($existingIds -join ";")
+            $projectXml.Save($projectPath)
+            "Applied Debug|Win32-only warning compatibility settings to $relativePath: $($warningIds -join ', ')"
           }
 
-          $disabled = $debugGroup.SelectSingleNode("msb:DisableSpecificWarnings", $ns)
-          if (-not $disabled) {
-            $disabled = $networkXml.CreateElement("DisableSpecificWarnings", "http://schemas.microsoft.com/developer/msbuild/2003")
-            [void]$debugGroup.AppendChild($disabled)
-          }
-          $warningIds = @($disabled.InnerText -split ";" | Where-Object { $_ })
-          foreach ($id in @("4267", "4838")) {
-            if ($warningIds -notcontains $id) { $warningIds += $id }
-          }
-          $disabled.InnerText = ($warningIds -join ";")
-          $networkXml.Save($networkProject)
-          "Applied Debug|Win32-only Network compatibility settings; warning-as-error remains enabled."
+          Add-DebugWarningSuppressions "Network\Network.vcxproj" @("4267", "4838", "4477") @("_WINSOCK_DEPRECATED_NO_WARNINGS")
+          Add-DebugWarningSuppressions "Log\Log.vcxproj" @("4996")
       - name: Check legacy prerequisites
         shell: pwsh
         run: |
