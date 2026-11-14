@@ -394,6 +394,23 @@ jobs:
           Add-DebugWarningSuppressions "Log\Log.vcxproj" @("4996")
           Add-DebugWarningSuppressions "Base\Base.vcxproj" @("4996")
           Add-DebugWarningSuppressions "App\App.vcxproj" @("4005", "4267", "4305", "4316")
+          # W3C HTParse.h defines PARSE_ANCHOR as an alias for PARSE_VIEW.
+          # That macro collides with the PARSE_ANCHOR enum member in the Windows SDK urlmon.h.
+          # Http.cpp only needs HTParse flags such as PARSE_PATH, so undefine the alias
+          # in this CI workspace immediately after the W3C header is included.
+          $httpSourcePath = Join-Path $env:GITHUB_WORKSPACE "App\util\Shared\Http.cpp"
+          if (-not (Test-Path $httpSourcePath)) { throw "Expected HTTP source file not found: $httpSourcePath" }
+          $httpSourceText = Get-Content -Path $httpSourcePath -Raw
+          $httpInclude = '#include "util/HTW3C.h"'
+          if ([regex]::Matches($httpSourceText, [regex]::Escape($httpInclude)).Count -ne 1) {
+            throw "Expected exactly one W3C HTW3C include in App/util/Shared/Http.cpp."
+          }
+          if ($httpSourceText.Contains("#undef PARSE_ANCHOR")) {
+            throw "PARSE_ANCHOR compatibility guard is already present; refusing to patch twice."
+          }
+          $httpSourceText = $httpSourceText.Replace($httpInclude, $httpInclude + "`r`n#undef PARSE_ANCHOR")
+          Set-Content -Path $httpSourcePath -Value $httpSourceText -Encoding utf8
+          "Applied CI-only W3C PARSE_ANCHOR macro collision fix to App/util/Shared/Http.cpp."
       - name: Check legacy prerequisites
         shell: pwsh
         run: |
