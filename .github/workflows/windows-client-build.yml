@@ -208,22 +208,27 @@ jobs:
           # an external GNU regex package (rxposix.h + gnu_regex.lib/dll).
           # This client only consumes HTParse from libwww, not the regex API,
           # so disable that optional feature in the CI-staged dependency copy.
-          $wwwWindowsConfig = Join-Path $wwwTarget "Library\\src\\windows\\config.h"
+          $wwwWindowsConfig = Join-Path $wwwTarget "Library\src\windows\config.h"
           if (-not (Test-Path $wwwWindowsConfig)) {
             throw "W3C libwww Windows config.h is missing: $wwwWindowsConfig"
           }
+          $regexDisableLines = @(
+            ""
+            "/* Disabled for native MSVC: optional GNU POSIX regex package is not staged. */"
+            "#ifdef HT_POSIX_REGEX"
+            "#undef HT_POSIX_REGEX"
+            "#endif"
+            "#ifdef HAVE_REGEX_H"
+            "#undef HAVE_REGEX_H"
+            "#endif"
+          )
+          Add-Content -Path $wwwWindowsConfig -Value ($regexDisableLines -join [Environment]::NewLine) -Encoding Ascii
           $wwwConfigText = Get-Content -Path $wwwWindowsConfig -Raw
-          $wwwConfigText += "`r`n/* Disable optional POSIX regex: this native MSVC build does not ship GNU regex. */`r`n#ifdef HT_POSIX_REGEX`r`n#undef HT_POSIX_REGEX`r
-#endif`r
-#ifdef HAVE_REGEX_H`r
-define_placeholder`r
-#endif`r
-"
-          $wwwConfigText = $wwwConfigText.Replace("#ifdef HAVE_REGEX_H`r
-define_placeholder", "#ifdef HAVE_REGEX_H`r
-#undef HAVE_REGEX_H")
-          Set-Content -Path $wwwWindowsConfig -Value $wwwConfigText -NoNewline -Encoding Ascii
-          if ($wwwConfigText -notmatch '(?m)^#undef HT_POSIX_REGEX
+          if ($wwwConfigText -notmatch '(?m)^#undef HT_POSIX_REGEX\s*$' -or
+              $wwwConfigText -notmatch '(?m)^#undef HAVE_REGEX_H\s*$') {
+            throw "W3C libwww optional POSIX regex disablement was not staged correctly."
+          }
+          "Disabled optional W3C POSIX regex in the CI-only libwww dependency copy."
 
           # This 2012-era client requires the legacy DirectX SDK headers.
           # The hosted Windows SDK image no longer ships the Direct3D 9 header.
