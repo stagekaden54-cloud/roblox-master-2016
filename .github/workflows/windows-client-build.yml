@@ -77,7 +77,7 @@ jobs:
           # seekpos() and _FPOSOFF in the VS2022 STL; apply Boost iostreams PR #57
           # to this temporary dependency copy only.
           $boostFposConfig = Join-Path $boostTarget "boost\iostreams\detail\config\fpos.hpp"
-          $fposText = Get-Content -Path $boostFposConfig -Raw
+          $fposText = (Get-Content -Path $boostFposConfig -Raw) -replace "`r`n", "`n"
           $oldFposCondition = @'
 # if (defined(_YVALS) || defined(_CPPLIB_VER)) && !defined(__SGI_STL_PORT) && \
      !defined(_STLPORT_VERSION) && !defined(__QNX__)
@@ -345,7 +345,12 @@ jobs:
           [xml]$networkXml = Get-Content -Path $networkProject
           $ns = New-Object System.Xml.XmlNamespaceManager($networkXml.NameTable)
           $ns.AddNamespace("msb", "http://schemas.microsoft.com/developer/msbuild/2003")
-          $debugGroup = $networkXml.SelectSingleNode("//msb:ItemDefinitionGroup[@Condition=\"'$(Configuration)|$(Platform)'=='Debug|Win32'\"]/msb:ClCompile", $ns)
+          $debugCondition = '''$(Configuration)|$(Platform)''==''Debug|Win32'''
+          $debugItemDefinition = $networkXml.SelectNodes("//msb:ItemDefinitionGroup", $ns) |
+            Where-Object { $_.GetAttribute("Condition") -eq $debugCondition } |
+            Select-Object -First 1
+          if (-not $debugItemDefinition) { throw "Network Debug|Win32 item definition group was not found." }
+          $debugGroup = $debugItemDefinition.SelectSingleNode("msb:ClCompile", $ns)
           if (-not $debugGroup) { throw "Network Debug|Win32 compiler settings were not found." }
 
           $definitions = $debugGroup.SelectSingleNode("msb:PreprocessorDefinitions", $ns)
