@@ -21,7 +21,9 @@
 #include "View.h"
 #include "RbxWebView.h"
 
+#if !defined(_DEBUG)
 #include "VMProtectSDK.h"
+#endif
 
 LOGGROUP(PlayerShutdownLuaTimeoutSeconds)
 
