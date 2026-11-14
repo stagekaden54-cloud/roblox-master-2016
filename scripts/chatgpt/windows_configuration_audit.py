@@ -19,10 +19,21 @@ def text_of(node):
     return "".join(node.itertext()).strip()
 
 def condition_matches(value):
+    """Evaluate common MSBuild configuration/platform equality conditions conservatively."""
     if not value:
         return True
-    v = value.lower().replace(" ", "")
-    return CONFIG.lower().replace(" ", "") in v or not ("'$(configuration)|$(platform)'!=" in v)
+    v = value.strip()
+    pairs = re.findall(r"""['"]\$\(Configuration\)\|\$\(Platform\)['"]\s*==\s*['"]([^'"]+)['"]""", v, re.I)
+    if pairs:
+        return any(x.lower() == CONFIG.lower() for x in pairs)
+    configs = re.findall(r"""['"]\$\(Configuration\)['"]\s*==\s*['"]([^'"]+)['"]""", v, re.I)
+    if configs:
+        return any(x.lower() == CONFIG.split("|")[0].lower() for x in configs)
+    platforms = re.findall(r"""['"]\$\(Platform\)['"]\s*==\s*['"]([^'"]+)['"]""", v, re.I)
+    if platforms:
+        return any(x.lower() == CONFIG.split("|")[1].lower() for x in platforms)
+    # Unknown conditions are retained for review, not assumed to be active.
+    return False
 
 def project_inventory(path):
     if not path.exists():
@@ -33,12 +44,15 @@ def project_inventory(path):
            "active_property_groups": [], "active_item_definitions": []}
     for node in root.iter():
         tag = local(node.tag)
+        cond = node.attrib.get("Condition", "")
         if tag == "Import":
-            out["imports"].append({"project": node.attrib.get("Project"), "condition": node.attrib.get("Condition", "")})
+            out["imports"].append({"project": node.attrib.get("Project"), "condition": cond,
+                                   "condition_matches_debug_win32": condition_matches(cond)})
         elif tag == "ProjectReference":
-            out["project_references"].append({"include": node.attrib.get("Include"), "condition": node.attrib.get("Condition", "")})
-        elif tag in ("PropertyGroup", "ItemDefinitionGroup") and condition_matches(node.attrib.get("Condition", "")):
-            entry = {"condition": node.attrib.get("Condition", ""), "values": {}}
+            out["project_references"].append({"include": node.attrib.get("Include"), "condition": cond,
+                                              "condition_matches_debug_win32": condition_matches(cond)})
+        elif tag in ("PropertyGroup", "ItemDefinitionGroup"):
+            entry = {"condition": cond, "condition_matches_debug_win32": condition_matches(cond), "values": {}}
             for child in node:
                 entry["values"][local(child.tag)] = text_of(child)
             out["active_property_groups" if tag == "PropertyGroup" else "active_item_definitions"].append(entry)
