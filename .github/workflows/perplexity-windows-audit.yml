@@ -1,0 +1,41 @@
+name: Perplexity Windows Dependency Audit
+on:
+  push:
+    branches: [perplexity-windows]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inventory:
+    name: Source and toolchain inventory (not a client build)
+    if: github.ref == 'refs/heads/perplexity-windows'
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Audit all tracked projects and dependency references
+        shell: pwsh
+        run: |
+          python scripts/perplexity/windows_dependency_audit.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Publish audit summary
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path perplexity-audit/summary.txt) {
+            Get-Content perplexity-audit/summary.txt | Add-Content $env:GITHUB_STEP_SUMMARY
+          }
+          'This workflow does not produce or certify a Windows executable.' | Add-Content $env:GITHUB_STEP_SUMMARY
+      - name: Upload inventory even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perplexity-windows-dependency-audit
+          path: perplexity-audit/
+          if-no-files-found: error
+          retention-days: 7
