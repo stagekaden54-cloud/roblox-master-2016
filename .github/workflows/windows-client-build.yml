@@ -21,6 +21,48 @@ jobs:
       - name: Locate Visual Studio MSBuild
         uses: microsoft/setup-msbuild@v2
 
+      - name: Inspect CoreScriptConverter DLL dependencies
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $rsc = Join-Path $env:GITHUB_WORKSPACE "CoreScriptConverter2\tool\win32\rsc.exe"
+          if (-not (Test-Path $rsc)) { throw "Checked-in CoreScriptConverter executable is missing: $rsc" }
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) { throw "vswhere.exe is missing; cannot locate dumpbin." }
+          $vsRoot = & $vswhere -latest -products * -property installationPath
+          if ([string]::IsNullOrWhiteSpace($vsRoot)) { throw "Could not locate Visual Studio installation." }
+          $dumpbin = Get-ChildItem (Join-Path $vsRoot "VC\Tools\MSVC") -Filter dumpbin.exe -Recurse -File |
+            Where-Object { $_.FullName -match "\\Hostx64\\x86\\dumpbin\.exe$" } |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $dumpbin) { throw "Could not locate x86-capable dumpbin.exe." }
+          "CoreScriptConverter executable: $rsc"
+          "dumpbin: $($dumpbin.FullName)"
+          "Direct imported DLLs:"
+          $dependents = & $dumpbin.FullName /nologo /dependents $rsc 2>&1
+          if ($LASTEXITCODE -ne 0) { throw "dumpbin /dependents failed: $dependents" }
+          $dependents | Tee-Object -FilePath build-logs/corescript-dll-dependencies.txt
+          $searchDirs = @(
+            (Split-Path $rsc),
+            (Join-Path $env:WINDIR "System32"),
+            (Join-Path $env:WINDIR "SysWOW64"),
+            (Join-Path $vsRoot "VC\Redist\MSVC")
+          ) + ($env:PATH -split ";")
+          $dllNames = @($dependents | ForEach-Object {
+            if ($_ -match "^\s+([A-Za-z0-9_.-]+\.dll)\s*$") { $Matches[1] }
+          } | Sort-Object -Unique)
+          "Direct dependency availability:"
+          foreach ($dll in $dllNames) {
+            $found = $false
+            foreach ($dir in $searchDirs) {
+              if ([string]::IsNullOrWhiteSpace($dir) -or -not (Test-Path $dir -PathType Container)) { continue }
+              if (Test-Path (Join-Path $dir $dll)) {
+                "FOUND  $dll  $dir"
+                $found = $true
+                break
+              }
+            }
+            if (-not $found) { "MISSING $dll" }
+          }
       - name: Record Windows build environment
         shell: pwsh
         run: |
