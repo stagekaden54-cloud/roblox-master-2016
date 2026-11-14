@@ -21,6 +21,29 @@ jobs:
       - name: Locate Visual Studio MSBuild
         uses: microsoft/setup-msbuild@v2
 
+      - name: Install Microsoft Visual C++ 2012 Update 4 x86 runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $installer = Join-Path $env:RUNNER_TEMP "vcredist_2012_x86.exe"
+          $uri = "https://download.microsoft.com/download/1/6/B/16B06F60-3B20-4FF2-B699-5E9B7962F9AE/VSU_4/vcredist_x86.exe"
+          Invoke-WebRequest -Uri $uri -OutFile $installer
+          $signature = Get-AuthenticodeSignature -FilePath $installer
+          if ($signature.Status -ne "Valid" -or $signature.SignerCertificate.Subject -notmatch "Microsoft") {
+            throw "Visual C++ 2012 x86 redistributable signature is not valid or is not signed by Microsoft."
+          }
+          "Verified Microsoft-signed Visual C++ 2012 Update 4 x86 installer."
+          $process = Start-Process -FilePath $installer -ArgumentList @("/install", "/quiet", "/norestart") -Wait -PassThru
+          "Visual C++ 2012 x86 installer exit code: $($process.ExitCode)"
+          if ($process.ExitCode -notin @(0, 3010)) {
+            throw "Visual C++ 2012 x86 runtime installation failed with exit code $($process.ExitCode)."
+          }
+          foreach ($dll in @("MSVCP110.dll", "MSVCR110.dll")) {
+            $path = Join-Path $env:WINDIR "SysWOW64\\$dll"
+            if (-not (Test-Path $path)) { throw "VC++ 2012 x86 runtime DLL was not installed: $path" }
+            "Verified runtime DLL: $path"
+          }
+
       - name: Inspect CoreScriptConverter DLL dependencies
         shell: pwsh
         run: |
