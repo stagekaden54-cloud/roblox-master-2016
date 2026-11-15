@@ -311,7 +311,22 @@ jobs:
 
           $curlGenerator = Join-Path $curlRoot "projects\generate.bat"
           if (-not (Test-Path $curlGenerator -PathType Leaf)) {
-            throw "curl 7.43.0 source archive is missing its VC12 project generator: $curlGenerator"
+            # curl's release source archive omits this tracked helper script.
+            # Restore it from the exact upstream 7.43.0 tag commit.
+            New-Item -ItemType Directory -Force -Path (Split-Path $curlGenerator -Parent) | Out-Null
+            Invoke-WebRequest -Uri "https://raw.githubusercontent.com/curl/curl/38e07886ed2792988217a2ffa482ce3a69ca92c2/projects/generate.bat" -OutFile $curlGenerator
+            $generatorBlob = (& git hash-object $curlGenerator).Trim()
+            if ($generatorBlob -ne "2aa04de909550564c40182dbc7b088ef47295ae4") {
+              throw "Restored curl 7.43.0 generator did not match the pinned upstream Git blob: $generatorBlob"
+            }
+          }
+          foreach ($template in @(
+            "Windows\VC12\lib\libcurl.tmpl",
+            "Windows\VC12\src\curl.tmpl"
+          )) {
+            if (-not (Test-Path (Join-Path $curlRoot "projects\$template") -PathType Leaf)) {
+              throw "curl 7.43.0 source archive is missing required VC12 template: $template"
+            }
           }
           # Run from the curl source root and pass a relative batch path. This
           # avoids cmd.exe's nested-quote parsing of the runner's absolute temp path.
