@@ -324,19 +324,19 @@ jobs:
           # Restore the exact files tracked by the pinned upstream tag commit.
           $curlTemplates = @(
             @{
-              RelativePath = "Windows\\VC12\\lib\\libcurl.tmpl"
+              RelativePath = "Windows\VC12\lib\libcurl.tmpl"
               Blob = "65098efd72a4b77a4e0b1cbde8bbaba082c4a1a5"
             },
             @{
-              RelativePath = "Windows\\VC12\\src\\curlsrc.tmpl"
+              RelativePath = "Windows\VC12\src\curlsrc.tmpl"
               Blob = "88ace4964b8881babbc5e5f8bca053f834383567"
             }
           )
           foreach ($template in $curlTemplates) {
-            $templatePath = Join-Path $curlRoot ("projects\\{0}" -f $template.RelativePath)
+            $templatePath = Join-Path $curlRoot ("projects\{0}" -f $template.RelativePath)
             if (-not (Test-Path $templatePath -PathType Leaf)) {
               New-Item -ItemType Directory -Force -Path (Split-Path $templatePath -Parent) | Out-Null
-              $templateUrl = "https://raw.githubusercontent.com/curl/curl/38e07886ed2792988217a2ffa482ce3a69ca92c2/projects/$($template.RelativePath.Replace('\\', '/'))"
+              $templateUrl = "https://raw.githubusercontent.com/curl/curl/38e07886ed2792988217a2ffa482ce3a69ca92c2/projects/$($template.RelativePath.Replace('\', '/'))"
               Invoke-WebRequest -Uri $templateUrl -OutFile $templatePath
             }
             $templateBlob = (& git hash-object $templatePath).Trim()
