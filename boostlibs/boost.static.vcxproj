@@ -115,7 +115,7 @@
     <ClCompile>
       <Optimization>Disabled</Optimization>
       <AdditionalIncludeDirectories>$(CONTRIB_PATH)\boost_1_56_0\include;$(CONTRIB_PATH)\windows\x86\zlib\zlib-1.2.8\include\zlib;$(CONTRIB_PATH)\cpp-netlib-0.11.0-final;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>BOOST_POSIX_API;BOOST_CXX11_NO_DELETED_FUNCTIONS;WIN32;ZLIB_WINAPI;RBX_PLATFORM_WIN_DURANGO;_DEBUG;_LIB;_WIN32_WINNT=0x0501;NTDDI_VERSION=0x05010100;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>BOOST_THREAD_BUILD_LIB;BOOST_POSIX_API;BOOST_CXX11_NO_DELETED_FUNCTIONS;WIN32;ZLIB_WINAPI;RBX_PLATFORM_WIN_DURANGO;_DEBUG;_LIB;_WIN32_WINNT=0x0501;NTDDI_VERSION=0x05010100;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MinimalRebuild>true</MinimalRebuild>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
