@@ -486,7 +486,7 @@ jobs:
           # in-project Boost sources. Scope Date_Time auto-link suppression to these
           # Debug|Win32 projects only; suppress C4005 here because the legacy
           # ScriptInformationProvider header also defines this macro in client files.
-          Add-DebugWarningSuppressions "WindowsClient\WindowsClient.vcxproj" @("4005") @("BOOST_PROGRAM_OPTIONS_NO_LIB", "BOOST_DATE_TIME_NO_LIB", "BOOST_SYSTEM_NO_LIB", "BOOST_CHRONO_NO_LIB", "BOOST_FILESYSTEM_NO_LIB")
+          Add-DebugWarningSuppressions "WindowsClient\WindowsClient.vcxproj" @("4005") @("BOOST_PROGRAM_OPTIONS_NO_LIB", "BOOST_DATE_TIME_NO_LIB", "BOOST_SYSTEM_NO_LIB", "BOOST_CHRONO_NO_LIB", "BOOST_FILESYSTEM_NO_LIB", "BOOST_THREAD_NO_LIB")
           Add-DebugWarningSuppressions "boostlibs\boost.static.vcxproj" @() @("BOOST_DATE_TIME_NO_LIB")
 
           # The legacy WindowsClient references boost.static.vcxproj, which does not
