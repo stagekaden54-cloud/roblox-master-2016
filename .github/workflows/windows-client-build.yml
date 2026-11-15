@@ -207,31 +207,130 @@ jobs:
           $contrib = $env:CONTRIB_PATH
           if ([string]::IsNullOrWhiteSpace($contrib)) { throw "CONTRIB_PATH was not initialized." }
 
-          # OpenSSL import libraries are checked into this repository.
-          $opensslOut = Join-Path $contrib "openssl\out32"
-          New-Item -ItemType Directory -Force -Path $opensslOut | Out-Null
-          foreach ($name in @("ssleay32.lib", "libeay32.lib")) {
-            $source = Join-Path $env:GITHUB_WORKSPACE "openssl\VS2010\$name"
-            if (-not (Test-Path $source)) { throw "Checked-in OpenSSL library is missing: $source" }
-            Copy-Item $source (Join-Path $opensslOut $name) -Force
+          # Rebuild the pinned OpenSSL 1.0.2u and curl 7.43.0 sources with the
+          # current VS2022 toolset. The checked-in VS2010 archives reference the
+          # removed __iob_func CRT symbol and cannot be linked by this toolchain.
+          $networkRoot = Join-Path $env:RUNNER_TEMP "legacy-network-deps"
+          $opensslRoot = Join-Path $networkRoot "openssl1_0-win-build"
+          $zlibRoot = Join-Path $networkRoot "zlib-win-build"
+          New-Item -ItemType Directory -Force -Path $networkRoot | Out-Null
+
+          git clone --filter=blob:none --no-checkout https://github.com/kiyolee/openssl1_0-win-build.git $opensslRoot
+          if ($LASTEXITCODE -ne 0) { throw "Could not clone the pinned OpenSSL 1.0.2u source/build repository." }
+          git -C $opensslRoot checkout --detach dcd4ba976135542b74e65e96da45ff62693abdec
+          if ($LASTEXITCODE -ne 0) { throw "Could not check out the pinned OpenSSL 1.0.2u revision." }
+          if ((git -C $opensslRoot rev-parse HEAD).Trim() -ne "dcd4ba976135542b74e65e96da45ff62693abdec") {
+            throw "OpenSSL source revision did not match the pinned commit."
           }
 
-          # Restore curl 7.43.0 headers and use the repository's matching VS2010 x86 library.
+          git clone --filter=blob:none --no-checkout https://github.com/kiyolee/zlib-win-build.git $zlibRoot
+          if ($LASTEXITCODE -ne 0) { throw "Could not clone the pinned zlib source/build repository." }
+          git -C $zlibRoot checkout --detach 92c8faa3abc5d6a7965271ba397e7decec485912
+          if ($LASTEXITCODE -ne 0) { throw "Could not check out the pinned zlib revision." }
+          if ((git -C $zlibRoot rev-parse HEAD).Trim() -ne "92c8faa3abc5d6a7965271ba397e7decec485912") {
+            throw "zlib source revision did not match the pinned commit."
+          }
+
+          # The VS2022 OpenSSL project generates x86 assembly from Perl scripts.
+          if (-not (Get-Command perl.exe -ErrorAction SilentlyContinue)) {
+            throw "Perl is required by the pinned OpenSSL 1.0.2u VS2022 build."
+          }
+          if (-not (Get-Command nasm.exe -ErrorAction SilentlyContinue)) {
+            choco install nasm -y --no-progress
+            $env:Path = "$env:Path;C:\Program Files\NASM"
+          }
+          $perlExe = (Get-Command perl.exe -ErrorAction Stop).Source
+          $nasmExe = (Get-Command nasm.exe -ErrorAction Stop).Source
+          $env:PERL = $perlExe
+          $env:NASM = $nasmExe
+          "OpenSSL Perl: $perlExe" | Tee-Object -FilePath build-logs/network-dependencies.txt
+          "OpenSSL NASM: $nasmExe" | Tee-Object -Append -FilePath build-logs/network-dependencies.txt
+
+          # Build zlib for the same x86 Debug configuration expected by OpenSSL.
+          $zlibOut = Join-Path $zlibRoot "build-VS2022\Debug"
+          New-Item -ItemType Directory -Force -Path $zlibOut | Out-Null
+          $zlibSolution = Join-Path $zlibRoot "build-VS2022\zlib.sln"
+          $zlibOutArg = $zlibOut.TrimEnd('\') + '\'
+          & msbuild.exe $zlibSolution /t:libz-static /p:Configuration=Debug /p:Platform=Win32 /p:PlatformToolset=v143 "/p:OutDir=$zlibOutArg" /m /v:minimal
+          if ($LASTEXITCODE -ne 0) { throw "Pinned zlib x86 Debug build failed with exit code $LASTEXITCODE." }
+          $zlibLibrary = Get-ChildItem -Path $zlibOut -Filter "*.lib" -File -Recurse | Select-Object -First 1
+          if (-not $zlibLibrary) { throw "Pinned zlib build completed without producing a static library in $zlibOut." }
+          "Built zlib: $($zlibLibrary.FullName)" | Tee-Object -Append -FilePath build-logs/network-dependencies.txt
+
+          # Build the original OpenSSL 1.0.2u source using projects explicitly
+          # authored for Visual Studio 2022 / v143, rather than the VS2010 binaries.
+          $opensslOut = Join-Path $opensslRoot "build-VS2022\Win32\Debug"
+          New-Item -ItemType Directory -Force -Path $opensslOut | Out-Null
+          $opensslSolution = Join-Path $opensslRoot "build-VS2022\openssl1_0-lite.sln"
+          $opensslOutArg = $opensslOut.TrimEnd('\') + '\'
+          & msbuild.exe $opensslSolution "/t:libeay32-static;ssleay32-static" /p:Configuration=Debug /p:Platform=Win32 /p:PlatformToolset=v143 "/p:OutDir=$opensslOutArg" /m /v:minimal
+          if ($LASTEXITCODE -ne 0) { throw "Pinned OpenSSL 1.0.2u x86 Debug build failed with exit code $LASTEXITCODE." }
+
+          $cryptoLibrary = Get-ChildItem -Path $opensslOut -Filter "*libeay32*.lib" -File -Recurse | Select-Object -First 1
+          $sslLibrary = Get-ChildItem -Path $opensslOut -Filter "*ssleay32*.lib" -File -Recurse | Select-Object -First 1
+          $opensslHeaders = Join-Path $opensslOut "include\openssl"
+          if (-not $cryptoLibrary -or -not $sslLibrary) {
+            throw "OpenSSL build did not produce both libeay32 and ssleay32 static libraries."
+          }
+          if (-not (Test-Path (Join-Path $opensslHeaders "ssl.h"))) {
+            throw "OpenSSL build did not stage the generated include\openssl\ssl.h header."
+          }
+
+          # Preserve the legacy filenames and include layout expected by the
+          # existing WindowsClient project and curl 7.43.0 project template.
+          $opensslTarget = Join-Path $contrib "openssl"
+          $opensslOut32 = Join-Path $opensslTarget "out32"
+          New-Item -ItemType Directory -Force -Path $opensslOut32 | Out-Null
+          Copy-Item $cryptoLibrary.FullName (Join-Path $opensslOut32 "libeay32.lib") -Force
+          Copy-Item $sslLibrary.FullName (Join-Path $opensslOut32 "ssleay32.lib") -Force
+          "Built OpenSSL crypto: $($cryptoLibrary.FullName)" | Tee-Object -Append -FilePath build-logs/network-dependencies.txt
+          "Built OpenSSL SSL: $($sslLibrary.FullName)" | Tee-Object -Append -FilePath build-logs/network-dependencies.txt
+
+          # Restore and build the matching curl 7.43.0 source using its VC12
+          # project template retargeted to the installed VS2022 v143 toolset.
           $curlZip = Join-Path $env:RUNNER_TEMP "curl-7.43.0.zip"
           Invoke-WebRequest -Uri "https://curl.se/download/curl-7.43.0.zip" -OutFile $curlZip
           $curlHash = (Get-FileHash $curlZip -Algorithm SHA256).Hash.ToLowerInvariant()
-          "curl 7.43.0 archive SHA256: $curlHash" | Tee-Object -FilePath build-logs/dependencies.txt
+          "curl 7.43.0 archive SHA256: $curlHash" | Tee-Object -Append -FilePath build-logs/network-dependencies.txt
           $curlExtract = Join-Path $env:RUNNER_TEMP "curl-7.43.0-extract"
           Expand-Archive $curlZip $curlExtract -Force
           $curlHeader = Get-ChildItem $curlExtract -Filter curl.h -Recurse -File | Select-Object -First 1
           if (-not $curlHeader) { throw "curl 7.43.0 archive did not contain curl.h." }
           $curlRoot = $curlHeader.Directory.Parent.Parent.FullName
+
+          # curl's legacy VC12 template expects a sibling OpenSSL tree named
+          # openssl with inc32\openssl headers and out32 library filenames.
+          $curlParent = Split-Path $curlRoot -Parent
+          $curlOpenSSL = Join-Path $curlParent "openssl"
+          $curlOpenSSLInc = Join-Path $curlOpenSSL "inc32\openssl"
+          $curlOpenSSLOut = Join-Path $curlOpenSSL "out32"
+          New-Item -ItemType Directory -Force -Path $curlOpenSSLInc,$curlOpenSSLOut | Out-Null
+          Copy-Item (Join-Path $opensslHeaders "*") $curlOpenSSLInc -Recurse -Force
+          Copy-Item $cryptoLibrary.FullName (Join-Path $curlOpenSSLOut "libeay32.lib") -Force
+          Copy-Item $sslLibrary.FullName (Join-Path $curlOpenSSLOut "ssleay32.lib") -Force
+
+          $curlGenerator = Join-Path $curlRoot "projects\generate.bat"
+          $generatorCommand = '"' + $curlGenerator + '" vc12'
+          & $env:ComSpec /d /c $generatorCommand
+          if ($LASTEXITCODE -ne 0) { throw "curl 7.43.0 VC12 project generation failed with exit code $LASTEXITCODE." }
+
+          $curlProject = Join-Path $curlRoot "projects\Windows\VC12\lib\libcurl.vcxproj"
+          if (-not (Test-Path $curlProject)) { throw "curl 7.43.0 VC12 generator did not create libcurl.vcxproj." }
+          & msbuild.exe $curlProject "/p:Configuration=LIB Debug - LIB OpenSSL" /p:Platform=Win32 /p:PlatformToolset=v143 /m /v:minimal
+          if ($LASTEXITCODE -ne 0) { throw "curl 7.43.0 x86 Debug static-library build failed with exit code $LASTEXITCODE." }
+
+          $curlBuildOut = Join-Path $curlRoot "build\Win32\VC12\LIB Debug - LIB OpenSSL"
+          $curlLibraries = @(Get-ChildItem -Path $curlBuildOut -Filter "*.lib" -File -Recurse | Where-Object { $_.Name -match "curl" })
+          if ($curlLibraries.Count -ne 1) {
+            throw "Expected one curl static library in $curlBuildOut, found $($curlLibraries.Count)."
+          }
+
           $curlTarget = Join-Path $contrib "windows\x86\curl\curl-7.43.0"
           New-Item -ItemType Directory -Force -Path (Join-Path $curlTarget "include\curl"),(Join-Path $curlTarget "lib") | Out-Null
           Copy-Item (Join-Path $curlRoot "include\curl\*") (Join-Path $curlTarget "include\curl") -Recurse -Force
-          $curlLib = Join-Path $env:GITHUB_WORKSPACE "curl\VS2010\libcurl_a.lib"
-          if (-not (Test-Path $curlLib)) { throw "Checked-in libcurl static library is missing: $curlLib" }
-          Copy-Item $curlLib (Join-Path $curlTarget "lib\libcurl_a.lib") -Force
+          Copy-Item $curlLibraries[0].FullName (Join-Path $curlTarget "lib\libcurl_a.lib") -Force
+          "Built curl static library: $($curlLibraries[0].FullName)" | Tee-Object -Append -FilePath build-logs/network-dependencies.txt
+          "Staged rebuilt OpenSSL and curl x86 Debug libraries for WindowsClient." | Tee-Object -Append -FilePath build-logs/network-dependencies.txt
 
           # Restore the upstream cpp-netlib 0.11.0 source release from Debian's archived
           # orig tarball. The old GitHub tag-archive URL now returns HTTP 404.
