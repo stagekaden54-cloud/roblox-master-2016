@@ -285,7 +285,7 @@ If no invalid parameter handler was defined (which is the default setting) and a
 So the conclusion is: The are many situations in which your user-defined Unhandled-Exception-Filter will never be called. This is a major change to the previous versions of the CRT and IMHO not very well documented.
 
 The solution
-If you don’t want this behavior and you will be sure that your handler will be called, you need to intercept the call to SetUnhandledExceptionFilter which is used by the CRT to disable all previously installed filters. You can achieve this for x86 with the following code:
+If you donÂ’t want this behavior and you will be sure that your handler will be called, you need to intercept the call to SetUnhandledExceptionFilter which is used by the CRT to disable all previously installed filters. You can achieve this for x86 with the following code:
 
 */
 #ifndef _M_IX86
@@ -415,22 +415,9 @@ void CrashReporter::EnableImmediateUpload(bool enabled)
 
 void CrashReporter::LaunchUploadProcess()
 {
-	if (!immediateUploadEnabled)
-		return;
-
-	// start new process to upload dmp
-	char filename[ MAX_PATH ];
-	DWORD size = GetModuleFileNameA( NULL, filename, MAX_PATH );
-	if (size && !strstr(filename, "RCCService"))
-	{
-		FASTLOG(FLog::Crash, "Launching process to upload dmp.");
-		STARTUPINFO si = {0};
-		si.cb = sizeof(si);
-		PROCESS_INFORMATION pi;
-		char cmd[256];
-		sprintf_s(cmd, 256, "\"%s\" -d", filename);
-		::CreateProcess(NULL, cmd, NULL, NULL, false, NORMAL_PRIORITY_CLASS, NULL, NULL, &si, &pi);
-	}
+	// BLOCK16 privacy hardening: retain locally generated crash dumps and logs,
+	// but never relaunch the client to upload them automatically.
+	return;
 }
 void CrashReporter::DisableHangReporting()
 {
