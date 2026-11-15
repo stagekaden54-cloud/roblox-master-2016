@@ -310,9 +310,19 @@ jobs:
           Copy-Item $sslLibrary.FullName (Join-Path $curlOpenSSLOut "ssleay32.lib") -Force
 
           $curlGenerator = Join-Path $curlRoot "projects\generate.bat"
-          $generatorCommand = '"' + $curlGenerator + '" vc12'
-          & $env:ComSpec /d /c $generatorCommand
-          if ($LASTEXITCODE -ne 0) { throw "curl 7.43.0 VC12 project generation failed with exit code $LASTEXITCODE." }
+          if (-not (Test-Path $curlGenerator -PathType Leaf)) {
+            throw "curl 7.43.0 source archive is missing its VC12 project generator: $curlGenerator"
+          }
+          # Run from the curl source root and pass a relative batch path. This
+          # avoids cmd.exe's nested-quote parsing of the runner's absolute temp path.
+          Push-Location $curlRoot
+          try {
+            & $env:ComSpec /d /c "call projects\generate.bat vc12"
+            $generatorExit = $LASTEXITCODE
+          } finally {
+            Pop-Location
+          }
+          if ($generatorExit -ne 0) { throw "curl 7.43.0 VC12 project generation failed with exit code $generatorExit." }
 
           $curlProject = Join-Path $curlRoot "projects\Windows\VC12\lib\libcurl.vcxproj"
           if (-not (Test-Path $curlProject)) { throw "curl 7.43.0 VC12 generator did not create libcurl.vcxproj." }
