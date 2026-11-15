@@ -41,25 +41,14 @@ namespace { // http utils
 
 	void httpHandler(std::string url, std::string params, std::string optionalContentType, bool isGet, bool externalRequest)
 	{
-		std::istringstream sparams(params);
-		std::string response;
-
-		std::string fullUrl = isGet ? format("%s?%s", url.c_str(), params.c_str()) : url;
-
-		RBX::Http http(fullUrl);
-		http.recordStatistics = false;
-		http.doNotUseCachedResponse = true;
-		try
-		{
-			if(isGet)
-				http.get(response);
-			else
-				http.post(sparams, optionalContentType.empty() ? Http::kContentTypeUrlEncoded : optionalContentType, params.size() > 256, response, externalRequest);
-		}
-		catch (const RBX::base_exception &ex)
-		{
-			FASTLOGS(DFLog::AnalyticsLog, "Exception in analytics httpHandler: %s", ex.what());
-		}
+		// BLOCK16 privacy hardening: disable legacy analytics, counters, and Influx
+		// telemetry transport. Keep the call sites intact so the legacy client can
+		// still run without sending usage or diagnostic data to third parties.
+		(void)url;
+		(void)params;
+		(void)optionalContentType;
+		(void)isGet;
+		(void)externalRequest;
 	}
 
 	void postOrGet(ThreadPool& threadPool, const std::string& url, const std::string& data, const std::string& optionalContentType, bool blocking, bool isGet, bool externalRequest)
