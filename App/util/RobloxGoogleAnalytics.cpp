@@ -67,27 +67,11 @@ namespace
 
 	static inline void httpHandler(std::string url, std::string params, bool isGet)
 	{
-		FASTLOGS(DFLog::GoogleAnalyticsTracking, "Sending Google Analytics params: %s", params.c_str());
-
-		std::istringstream sparams(params);
-		std::string response;
-
-		std::string fullUrl = isGet ? format("%s?%s", url.c_str(), params.c_str()) : url;
-
-		RBX::Http http(fullUrl);
-        http.recordStatistics = false;
-		http.doNotUseCachedResponse = true;
-		try
-		{
-			if(isGet)
-				http.get(response);
-			else
-				http.post(sparams, Http::kContentTypeDefaultUnspecified, true, response, true);
-		}
-		catch (const RBX::base_exception &ex)
-		{
-			FASTLOGS(DFLog::GoogleAnalyticsTracking, "Exception in httpHandler: %s", ex.what());
-		}
+		// BLOCK16 privacy hardening: no Google Analytics or legacy Roblox
+		// analytics requests are sent by this transport.
+		(void)url;
+		(void)params;
+		(void)isGet;
 	}
 
 	static inline bool checkUsage()
