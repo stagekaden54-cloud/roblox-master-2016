@@ -488,11 +488,13 @@ jobs:
           # ScriptInformationProvider header also defines this macro in client files.
           Add-DebugWarningSuppressions "WindowsClient\WindowsClient.vcxproj" @("4005") @("BOOST_PROGRAM_OPTIONS_NO_LIB", "BOOST_DATE_TIME_NO_LIB", "BOOST_SYSTEM_NO_LIB", "BOOST_CHRONO_NO_LIB", "BOOST_FILESYSTEM_NO_LIB", "BOOST_THREAD_NO_LIB")
           Add-DebugWarningSuppressions "boostlibs\boost.static.vcxproj" @() @("BOOST_DATE_TIME_NO_LIB")
-          # Boost.Thread auto-link directives can originate in objects from any
-          # dependent project, not only WindowsClient. Apply the suppression to
-          # every Debug|Win32 C++ project in this CI workspace. The implementation
-          # remains provided by boost.static; Release and NoOpt are untouched.
+          # Boost.Thread and Boost.System auto-link directives can originate in
+          # objects from any dependent project, not only WindowsClient. Apply both
+          # suppressions to every Debug|Win32 C++ project in this CI workspace.
+          # Their implementations remain provided by boost.static; Release and
+          # NoOpt are untouched.
           $threadPatchedProjects = 0
+          $systemPatchedProjects = 0
           Get-ChildItem -Path $env:GITHUB_WORKSPACE -Filter "*.vcxproj" -File -Recurse |
             Where-Object { $_.FullName -notmatch '[\\](\.git|\.vs|packages)[\\]' } |
             ForEach-Object {
@@ -511,10 +513,15 @@ jobs:
                   $definitions.InnerText = "BOOST_THREAD_NO_LIB;" + $definitions.InnerText
                   $threadPatchedProjects++
                 }
+                if ($definitions.InnerText -notmatch '(^|;)BOOST_SYSTEM_NO_LIB(;|$)') {
+                  $definitions.InnerText = "BOOST_SYSTEM_NO_LIB;" + $definitions.InnerText
+                  $systemPatchedProjects++
+                }
               }
               if ($debugGroups.Count -gt 0) { $projectXml.Save($projectPath) }
             }
           "Applied BOOST_THREAD_NO_LIB to Debug|Win32 compiler settings in $threadPatchedProjects project(s)."
+          "Applied BOOST_SYSTEM_NO_LIB to Debug|Win32 compiler settings in $systemPatchedProjects project(s)."
 
 
           # The legacy WindowsClient references boost.static.vcxproj, which does not
