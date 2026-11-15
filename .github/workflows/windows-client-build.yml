@@ -344,6 +344,17 @@ jobs:
               throw "Restored curl VC12 template $($template.RelativePath) did not match its pinned upstream Git blob: $templateBlob"
             }
           }
+          # The release archive renames curlbuild.h.dist to curlbuild.h,
+          # while generate.bat expects the original .dist filename. Restore
+          # the exact pinned upstream template for its prerequisite-copy step.
+          $curlBuildDist = Join-Path $curlRoot "include\curl\curlbuild.h.dist"
+          if (-not (Test-Path $curlBuildDist -PathType Leaf)) {
+            Invoke-WebRequest -Uri "https://raw.githubusercontent.com/curl/curl/38e07886ed2792988217a2ffa482ce3a69ca92c2/include/curl/curlbuild.h.dist" -OutFile $curlBuildDist
+          }
+          $curlBuildDistBlob = (& git hash-object $curlBuildDist).Trim()
+          if ($curlBuildDistBlob -ne "f09419a843915154a89f4fa0ac04bfdcfa5fb615") {
+            throw "Restored curlbuild.h.dist did not match its pinned upstream Git blob: $curlBuildDistBlob"
+          }
           # Run from the curl source root and pass a relative batch path. This
           # avoids cmd.exe's nested-quote parsing of the runner's absolute temp path.
           Push-Location $curlRoot
