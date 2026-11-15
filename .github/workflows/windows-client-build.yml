@@ -481,6 +481,51 @@ jobs:
           # Disable Boost auto-link for this component in Debug so MSVC does not request
           # the absent vc120 prebuilt library alongside those in-project sources.
           Add-DebugWarningSuppressions "WindowsClient\WindowsClient.vcxproj" @() @("BOOST_PROGRAM_OPTIONS_NO_LIB")
+
+          # The legacy WindowsClient references boost.static.vcxproj, but that project
+          # does not include Boost.Date_Time's compiled sources. Add the four official
+          # Boost 1.56 Date_Time translation units to that static library in this CI
+          # workspace, then suppress Date_Time auto-link globally so every project
+          # uses the project-reference library instead of requesting a missing vc120
+          # prebuilt archive. No tracked C++ or project files are modified.
+          $boostProjectPath = Join-Path $env:GITHUB_WORKSPACE "boostlibs\boost.static.vcxproj"
+          if (-not (Test-Path $boostProjectPath)) { throw "Boost static project is missing: $boostProjectPath" }
+          [xml]$boostProjectXml = Get-Content -Path $boostProjectPath
+          $boostNs = New-Object System.Xml.XmlNamespaceManager($boostProjectXml.NameTable)
+          $boostNs.AddNamespace("msb", $namespace)
+          $boostCompileGroup = $boostProjectXml.SelectNodes("//msb:ItemGroup[msb:ClCompile]", $boostNs) |
+            Select-Object -First 1
+          if (-not $boostCompileGroup) { throw "Could not find the Boost static project's ClCompile item group." }
+          $dateTimeSources = @(
+            "$(CONTRIB_PATH)\boost_1_56_0\libs\date_time\src\gregorian\greg_month.cpp",
+            "$(CONTRIB_PATH)\boost_1_56_0\libs\date_time\src\gregorian\greg_weekday.cpp",
+            "$(CONTRIB_PATH)\boost_1_56_0\libs\date_time\src\gregorian\date_generators.cpp",
+            "$(CONTRIB_PATH)\boost_1_56_0\libs\date_time\src\posix_time\posix_time_types.cpp"
+          )
+          foreach ($source in $dateTimeSources) {
+            $resolved = $source.Replace("$(CONTRIB_PATH)", $env:CONTRIB_PATH).Replace("\\", "\")
+            if (-not (Test-Path $resolved -PathType Leaf)) { throw "Required Boost Date_Time source is missing: $resolved" }
+            $existing = $boostCompileGroup.SelectSingleNode("msb:ClCompile[@Include='$source']", $boostNs)
+            if (-not $existing) {
+              $item = $boostProjectXml.CreateElement("ClCompile", $namespace)
+              $item.SetAttribute("Include", $source)
+              [void]$boostCompileGroup.AppendChild($item)
+            }
+          }
+          $boostProjectXml.Save($boostProjectPath)
+          "Added Boost 1.56 Date_Time sources to the CI-only boost.static project."
+
+          $directoryBuildProps = @'
+          <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+            <ItemDefinitionGroup>
+              <ClCompile>
+                <PreprocessorDefinitions>BOOST_DATE_TIME_NO_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+              </ClCompile>
+            </ItemDefinitionGroup>
+          </Project>
+          '@
+          Set-Content -Path (Join-Path $env:GITHUB_WORKSPACE "Directory.Build.props") -Value $directoryBuildProps -Encoding utf8
+          "Disabled Boost.Date_Time auto-link across CI projects; WindowsClient links Date_Time objects through boost.static."
           # W3C HTParse.h defines PARSE_ANCHOR as an alias for PARSE_VIEW.
           # That macro collides with the PARSE_ANCHOR enum member in the Windows SDK urlmon.h.
           # Http.cpp only needs HTParse flags such as PARSE_PATH, so undefine the alias
