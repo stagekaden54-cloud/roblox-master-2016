@@ -255,7 +255,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Pinned zlib x86 Debug build failed with exit code $LASTEXITCODE." }
           $zlibLibrary = Get-ChildItem -Path $zlibOut -Filter "*.lib" -File -Recurse | Select-Object -First 1
           if (-not $zlibLibrary) { throw "Pinned zlib build completed without producing a static library in $zlibOut." }
+          # WindowsClient expects zlib.lib at this legacy contribution path.
+          # Stage the freshly rebuilt x86 Debug archive there rather than using
+          # the checked-in archive built with the old toolchain.
+          $zlibTargetLib = Join-Path $contrib "windows\x86\zlib\zlib-1.2.8\lib"
+          New-Item -ItemType Directory -Force -Path $zlibTargetLib | Out-Null
+          Copy-Item $zlibLibrary.FullName (Join-Path $zlibTargetLib "zlib.lib") -Force
           "Built zlib: $($zlibLibrary.FullName)" | Tee-Object -Append -FilePath build-logs/network-dependencies.txt
+          "Staged rebuilt x86 zlib: $(Join-Path $zlibTargetLib 'zlib.lib')" | Tee-Object -Append -FilePath build-logs/network-dependencies.txt
 
           # Build the original OpenSSL 1.0.2u source using projects explicitly
           # authored for Visual Studio 2022 / v143, rather than the VS2010 binaries.
@@ -280,7 +287,10 @@ jobs:
           # existing WindowsClient project and curl 7.43.0 project template.
           $opensslTarget = Join-Path $contrib "openssl"
           $opensslOut32 = Join-Path $opensslTarget "out32"
-          New-Item -ItemType Directory -Force -Path $opensslOut32 | Out-Null
+          $opensslIncludeRoot = Join-Path $opensslTarget "include"
+          $opensslIncludeTarget = Join-Path $opensslIncludeRoot "openssl"
+          New-Item -ItemType Directory -Force -Path $opensslOut32,$opensslIncludeTarget | Out-Null
+          Copy-Item (Join-Path $opensslHeaders "*") $opensslIncludeTarget -Recurse -Force
           Copy-Item $cryptoLibrary.FullName (Join-Path $opensslOut32 "libeay32.lib") -Force
           Copy-Item $sslLibrary.FullName (Join-Path $opensslOut32 "ssleay32.lib") -Force
           "Built OpenSSL crypto: $($cryptoLibrary.FullName)" | Tee-Object -Append -FilePath build-logs/network-dependencies.txt
@@ -627,7 +637,24 @@ jobs:
           Add-DebugWarningSuppressions "Network\Network.vcxproj" @("4005", "4267", "4838", "4477", "4996") @("_WINSOCK_DEPRECATED_NO_WARNINGS")
           Add-DebugWarningSuppressions "Log\Log.vcxproj" @("4996")
           Add-DebugWarningSuppressions "Base\Base.vcxproj" @("4996")
-          Add-DebugWarningSuppressions "App\App.vcxproj" @("4005", "4267", "4305", "4316")
+          Add-DebugWarningSuppressions "App\App.vcxproj" @("4005", "4267", "4305", "4316") @("HAVE_OPENSSL")
+          # App's bundled MD5 implementation intentionally matches OpenSSL's
+          # API. HAVE_OPENSSL selects OpenSSL's MD5_CTX/header and disables
+          # App's duplicate md5.c implementation in this Debug-only build.
+          $appProjectPath = Join-Path $env:GITHUB_WORKSPACE "App\App.vcxproj"
+          [xml]$appProjectXml = Get-Content -Path $appProjectPath
+          $appNs = New-Object System.Xml.XmlNamespaceManager($appProjectXml.NameTable)
+          $appNs.AddNamespace("msb", $namespace)
+          $appDebug = $appProjectXml.SelectNodes("//msb:ItemDefinitionGroup", $appNs) |
+            Where-Object { $_.GetAttribute("Condition") -eq $debugCondition } | Select-Object -First 1
+          $appIncludes = $appDebug.SelectSingleNode("msb:ClCompile/msb:AdditionalIncludeDirectories", $appNs)
+          if (-not $appIncludes) { throw "App Debug|Win32 include directories were not found." }
+          $opensslInclude = Join-Path $env:CONTRIB_PATH "openssl\include"
+          if (-not $appIncludes.InnerText.Contains($opensslInclude)) {
+            $appIncludes.InnerText = $opensslInclude + ";" + $appIncludes.InnerText
+          }
+          $appProjectXml.Save($appProjectPath)
+          "Configured App Debug|Win32 to use the matching OpenSSL MD5 API."
           # WindowsClient compiles Boost.Program_options sources directly in this project.
           # Boost.Filesystem sources are already compiled into the referenced boost.static project;
           # suppress its separate VC12 auto-link request in the WindowsClient Debug build.
