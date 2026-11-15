@@ -497,13 +497,13 @@ jobs:
             Select-Object -First 1
           if (-not $boostCompileGroup) { throw "Could not find the Boost static project's ClCompile item group." }
           $dateTimeSources = @(
-            "$(CONTRIB_PATH)\boost_1_56_0\libs\date_time\src\gregorian\greg_month.cpp",
-            "$(CONTRIB_PATH)\boost_1_56_0\libs\date_time\src\gregorian\greg_weekday.cpp",
-            "$(CONTRIB_PATH)\boost_1_56_0\libs\date_time\src\gregorian\date_generators.cpp",
-            "$(CONTRIB_PATH)\boost_1_56_0\libs\date_time\src\posix_time\posix_time_types.cpp"
+            '$(CONTRIB_PATH)\boost_1_56_0\libs\date_time\src\gregorian\greg_month.cpp',
+            '$(CONTRIB_PATH)\boost_1_56_0\libs\date_time\src\gregorian\greg_weekday.cpp',
+            '$(CONTRIB_PATH)\boost_1_56_0\libs\date_time\src\gregorian\date_generators.cpp',
+            '$(CONTRIB_PATH)\boost_1_56_0\libs\date_time\src\posix_time\posix_time_types.cpp'
           )
           foreach ($source in $dateTimeSources) {
-            $resolved = $source.Replace("$(CONTRIB_PATH)", $env:CONTRIB_PATH).Replace("\\", "\")
+            $resolved = $source.Replace('$(CONTRIB_PATH)', $env:CONTRIB_PATH)
             if (-not (Test-Path $resolved -PathType Leaf)) { throw "Required Boost Date_Time source is missing: $resolved" }
             $existing = $boostCompileGroup.SelectSingleNode("msb:ClCompile[@Include='$source']", $boostNs)
             if (-not $existing) {
