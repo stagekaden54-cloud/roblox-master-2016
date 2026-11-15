@@ -478,13 +478,15 @@ jobs:
           Add-DebugWarningSuppressions "Base\Base.vcxproj" @("4996")
           Add-DebugWarningSuppressions "App\App.vcxproj" @("4005", "4267", "4305", "4316")
           # WindowsClient compiles Boost.Program_options sources directly in this project.
+          # Boost.Filesystem sources are already compiled into the referenced boost.static project;
+          # suppress its separate VC12 auto-link request in the WindowsClient Debug build.
           # Disable Boost auto-link for this component in Debug so MSVC does not request
           # the absent vc120 prebuilt library alongside those in-project sources.
           # WindowsClient and the CI-extended boost.static library both use the
           # in-project Boost sources. Scope Date_Time auto-link suppression to these
           # Debug|Win32 projects only; suppress C4005 here because the legacy
           # ScriptInformationProvider header also defines this macro in client files.
-          Add-DebugWarningSuppressions "WindowsClient\WindowsClient.vcxproj" @("4005") @("BOOST_PROGRAM_OPTIONS_NO_LIB", "BOOST_DATE_TIME_NO_LIB", "BOOST_SYSTEM_NO_LIB", "BOOST_CHRONO_NO_LIB")
+          Add-DebugWarningSuppressions "WindowsClient\WindowsClient.vcxproj" @("4005") @("BOOST_PROGRAM_OPTIONS_NO_LIB", "BOOST_DATE_TIME_NO_LIB", "BOOST_SYSTEM_NO_LIB", "BOOST_CHRONO_NO_LIB", "BOOST_FILESYSTEM_NO_LIB")
           Add-DebugWarningSuppressions "boostlibs\boost.static.vcxproj" @() @("BOOST_DATE_TIME_NO_LIB")
 
           # The legacy WindowsClient references boost.static.vcxproj, which does not
