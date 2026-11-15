@@ -488,6 +488,34 @@ jobs:
           # ScriptInformationProvider header also defines this macro in client files.
           Add-DebugWarningSuppressions "WindowsClient\WindowsClient.vcxproj" @("4005") @("BOOST_PROGRAM_OPTIONS_NO_LIB", "BOOST_DATE_TIME_NO_LIB", "BOOST_SYSTEM_NO_LIB", "BOOST_CHRONO_NO_LIB", "BOOST_FILESYSTEM_NO_LIB", "BOOST_THREAD_NO_LIB")
           Add-DebugWarningSuppressions "boostlibs\boost.static.vcxproj" @() @("BOOST_DATE_TIME_NO_LIB")
+          # Boost.Thread auto-link directives can originate in objects from any
+          # dependent project, not only WindowsClient. Apply the suppression to
+          # every Debug|Win32 C++ project in this CI workspace. The implementation
+          # remains provided by boost.static; Release and NoOpt are untouched.
+          $threadPatchedProjects = 0
+          Get-ChildItem -Path $env:GITHUB_WORKSPACE -Filter "*.vcxproj" -File -Recurse |
+            Where-Object { $_.FullName -notmatch '[\\](\.git|\.vs|packages)[\\]' } |
+            ForEach-Object {
+              $projectPath = $_.FullName
+              [xml]$projectXml = Get-Content -Path $projectPath
+              $ns = New-Object System.Xml.XmlNamespaceManager($projectXml.NameTable)
+              $ns.AddNamespace("msb", $namespace)
+              $debugGroups = @($projectXml.SelectNodes("//msb:ItemDefinitionGroup", $ns) |
+                Where-Object { $_.GetAttribute("Condition") -eq $debugCondition })
+              foreach ($itemDefinition in $debugGroups) {
+                $compile = $itemDefinition.SelectSingleNode("msb:ClCompile", $ns)
+                if (-not $compile) { continue }
+                $definitions = $compile.SelectSingleNode("msb:PreprocessorDefinitions", $ns)
+                if (-not $definitions) { continue }
+                if ($definitions.InnerText -notmatch '(^|;)BOOST_THREAD_NO_LIB(;|$)') {
+                  $definitions.InnerText = "BOOST_THREAD_NO_LIB;" + $definitions.InnerText
+                  $threadPatchedProjects++
+                }
+              }
+              if ($debugGroups.Count -gt 0) { $projectXml.Save($projectPath) }
+            }
+          "Applied BOOST_THREAD_NO_LIB to Debug|Win32 compiler settings in $threadPatchedProjects project(s)."
+
 
           # The legacy WindowsClient references boost.static.vcxproj, which does not
           # include Boost.Date_Time's compiled sources in the tracked project. Add
