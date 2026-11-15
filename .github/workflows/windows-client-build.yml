@@ -860,7 +860,7 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          Get-ChildItem -Path . -Filter RobloxPlayerBetaRaw.exe -Recurse -ErrorAction SilentlyContinue |
+          Get-ChildItem -Path . -Filter BLOCK16Client.exe -Recurse -ErrorAction SilentlyContinue |
             ForEach-Object { Copy-Item $_.FullName -Destination build-logs -Force }
           Get-ChildItem build-logs -File | Select-Object Name,Length
 
