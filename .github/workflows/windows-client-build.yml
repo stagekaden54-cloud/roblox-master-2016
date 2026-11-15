@@ -486,7 +486,7 @@ jobs:
           # in-project Boost sources. Scope Date_Time auto-link suppression to these
           # Debug|Win32 projects only; suppress C4005 here because the legacy
           # ScriptInformationProvider header also defines this macro in client files.
-          Add-DebugWarningSuppressions "WindowsClient\WindowsClient.vcxproj" @("4005") @("BOOST_PROGRAM_OPTIONS_NO_LIB", "BOOST_DATE_TIME_NO_LIB", "BOOST_SYSTEM_NO_LIB", "BOOST_CHRONO_NO_LIB", "BOOST_FILESYSTEM_NO_LIB", "BOOST_THREAD_NO_LIB")
+          Add-DebugWarningSuppressions "WindowsClient\WindowsClient.vcxproj" @("4005") @("BOOST_PROGRAM_OPTIONS_NO_LIB", "BOOST_DATE_TIME_NO_LIB", "BOOST_SYSTEM_NO_LIB", "BOOST_CHRONO_NO_LIB", "BOOST_FILESYSTEM_NO_LIB", "BOOST_IOSTREAMS_NO_LIB", "BOOST_THREAD_NO_LIB")
           Add-DebugWarningSuppressions "boostlibs\boost.static.vcxproj" @() @("BOOST_DATE_TIME_NO_LIB")
           # Boost auto-link directives can originate in objects from any
           # dependent project, not only WindowsClient. Apply targeted suppressions
@@ -497,6 +497,7 @@ jobs:
           $chronoPatchedProjects = 0
           $dateTimePatchedProjects = 0
           $filesystemPatchedProjects = 0
+          $iostreamsPatchedProjects = 0
           Get-ChildItem -Path $env:GITHUB_WORKSPACE -Filter "*.vcxproj" -File -Recurse |
             Where-Object { $_.FullName -notmatch '[\\](\.git|\.vs|packages)[\\]' } |
             ForEach-Object {
@@ -531,6 +532,10 @@ jobs:
                   $definitions.InnerText = "BOOST_FILESYSTEM_NO_LIB;" + $definitions.InnerText
                   $filesystemPatchedProjects++
                 }
+                if ($definitions.InnerText -notmatch '(^|;)BOOST_IOSTREAMS_NO_LIB(;|$)') {
+                  $definitions.InnerText = "BOOST_IOSTREAMS_NO_LIB;" + $definitions.InnerText
+                  $iostreamsPatchedProjects++
+                }
               }
               if ($debugGroups.Count -gt 0) { $projectXml.Save($projectPath) }
             }
@@ -539,6 +544,7 @@ jobs:
           "Applied BOOST_CHRONO_NO_LIB to Debug|Win32 compiler settings in $chronoPatchedProjects project(s)."
           "Applied BOOST_DATE_TIME_NO_LIB to Debug|Win32 compiler settings in $dateTimePatchedProjects project(s)."
           "Applied BOOST_FILESYSTEM_NO_LIB to Debug|Win32 compiler settings in $filesystemPatchedProjects project(s)."
+          "Applied BOOST_IOSTREAMS_NO_LIB to Debug|Win32 compiler settings in $iostreamsPatchedProjects project(s)."
 
 
           # The legacy WindowsClient references boost.static.vcxproj, which does not
