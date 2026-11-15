@@ -690,6 +690,10 @@ jobs:
                 if (-not $compile) { continue }
                 $definitions = $compile.SelectSingleNode("msb:PreprocessorDefinitions", $ns)
                 if (-not $definitions) { continue }
+                # The rebuilt zlib archive exports the standard cdecl API.
+                # Legacy projects define ZLIB_WINAPI and request stdcall-
+                # decorated symbols (_deflate@8), which cannot match it.
+                $definitions.InnerText = (($definitions.InnerText -split ";" | Where-Object { $_ -ne "ZLIB_WINAPI" }) -join ";")
                 if ($definitions.InnerText -notmatch '(^|;)BOOST_THREAD_NO_LIB(;|$)') {
                   $definitions.InnerText = "BOOST_THREAD_NO_LIB;" + $definitions.InnerText
                   $threadPatchedProjects++
