@@ -496,6 +496,7 @@ jobs:
           $systemPatchedProjects = 0
           $chronoPatchedProjects = 0
           $dateTimePatchedProjects = 0
+          $filesystemPatchedProjects = 0
           Get-ChildItem -Path $env:GITHUB_WORKSPACE -Filter "*.vcxproj" -File -Recurse |
             Where-Object { $_.FullName -notmatch '[\\](\.git|\.vs|packages)[\\]' } |
             ForEach-Object {
@@ -526,6 +527,10 @@ jobs:
                   $definitions.InnerText = "BOOST_DATE_TIME_NO_LIB;" + $definitions.InnerText
                   $dateTimePatchedProjects++
                 }
+                if ($definitions.InnerText -notmatch '(^|;)BOOST_FILESYSTEM_NO_LIB(;|$)') {
+                  $definitions.InnerText = "BOOST_FILESYSTEM_NO_LIB;" + $definitions.InnerText
+                  $filesystemPatchedProjects++
+                }
               }
               if ($debugGroups.Count -gt 0) { $projectXml.Save($projectPath) }
             }
@@ -533,6 +538,7 @@ jobs:
           "Applied BOOST_SYSTEM_NO_LIB to Debug|Win32 compiler settings in $systemPatchedProjects project(s)."
           "Applied BOOST_CHRONO_NO_LIB to Debug|Win32 compiler settings in $chronoPatchedProjects project(s)."
           "Applied BOOST_DATE_TIME_NO_LIB to Debug|Win32 compiler settings in $dateTimePatchedProjects project(s)."
+          "Applied BOOST_FILESYSTEM_NO_LIB to Debug|Win32 compiler settings in $filesystemPatchedProjects project(s)."
 
 
           # The legacy WindowsClient references boost.static.vcxproj, which does not
