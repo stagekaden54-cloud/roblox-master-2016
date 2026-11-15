@@ -94,7 +94,7 @@
       <EnableEnhancedInstructionSet>StreamingSIMDExtensions2</EnableEnhancedInstructionSet>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>imm32.lib;ssleay32.lib;wldap32.lib;libeay32.lib;$(CONTRIB_PATH)\SDL2\VisualC\Win32\Release\SDL2.lib;strmbasd.lib;sensapi.lib;wmvcore.lib;DxErr9.lib;Urlmon.lib;zlib.lib;libcurl_a.lib;fmod_vc.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>imm32.lib;ssleay32.lib;wldap32.lib;libeay32.lib;legacy_stdio_definitions.lib;$(CONTRIB_PATH)\SDL2\VisualC\Win32\Release\SDL2.lib;strmbasd.lib;sensapi.lib;wmvcore.lib;DxErr9.lib;Urlmon.lib;zlib.lib;libcurl_a.lib;fmod_vc.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutDir)RobloxPlayerBetaRaw.exe</OutputFile>
       <AdditionalLibraryDirectories>$(CONTRIB_PATH)\openssl\out32;$(CONTRIB_PATH)\boost_1_56_0\stage\lib;..\fmod\win32\lib;..\TBB_4_1\lib;$(CONTRIB_PATH)\SDK\Lib;$(CONTRIB_PATH)\DSBaseClasses\Lib;$(CONTRIB_PATH)\VMProtectWin_2.13;$(CONTRIB_PATH)\windows\x86\zlib\zlib-1.2.8\lib;$(CONTRIB_PATH)\windows\x86\curl\curl-7.43.0\lib;$(CONTRIB_PATH)\SDL2\VisualC\Win32\Release;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <GenerateDebugInformation>true</GenerateDebugInformation>
