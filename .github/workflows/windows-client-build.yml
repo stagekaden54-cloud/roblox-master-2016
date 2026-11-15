@@ -241,8 +241,8 @@ jobs:
           }
           $perlExe = (Get-Command perl.exe -ErrorAction Stop).Source
           $nasmExe = (Get-Command nasm.exe -ErrorAction Stop).Source
-          $env:PERL = $perlExe
-          $env:NASM = $nasmExe
+          $env:PERL = "perl.exe"
+          $env:NASM = "nasm.exe"
           "OpenSSL Perl: $perlExe" | Tee-Object -FilePath build-logs/network-dependencies.txt
           "OpenSSL NASM: $nasmExe" | Tee-Object -Append -FilePath build-logs/network-dependencies.txt
 
