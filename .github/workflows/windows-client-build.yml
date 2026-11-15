@@ -515,17 +515,11 @@ jobs:
           $boostProjectXml.Save($boostProjectPath)
           "Added Boost 1.56 Date_Time sources to the CI-only boost.static project."
 
-          $directoryBuildProps = @'
-          <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-            <ItemDefinitionGroup>
-              <ClCompile>
-                <PreprocessorDefinitions>BOOST_DATE_TIME_NO_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-              </ClCompile>
-            </ItemDefinitionGroup>
-          </Project>
-          '@
-          Set-Content -Path (Join-Path $env:GITHUB_WORKSPACE "Directory.Build.props") -Value $directoryBuildProps -Encoding utf8
-          "Disabled Boost.Date_Time auto-link across CI projects; WindowsClient links Date_Time objects through boost.static."
+          # ScriptInformationProvider.h already defines BOOST_DATE_TIME_NO_LIB.
+          # Do not inject it globally through Directory.Build.props: that creates
+          # C4005 macro-redefinition warnings in projects that include the header.
+          # The Date_Time implementation sources above are linked through boost.static.
+          "Boost.Date_Time sources are staged in the CI-only boost.static project; using the repository's existing header-level auto-link setting."
           # W3C HTParse.h defines PARSE_ANCHOR as an alias for PARSE_VIEW.
           # That macro collides with the PARSE_ANCHOR enum member in the Windows SDK urlmon.h.
           # Http.cpp only needs HTParse flags such as PARSE_PATH, so undefine the alias
