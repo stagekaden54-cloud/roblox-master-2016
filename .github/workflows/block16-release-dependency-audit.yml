@@ -8,95 +8,71 @@ permissions:
 
 jobs:
   audit:
-    name: Inspect repository-side Release prerequisites
+    name: Verify Release prerequisites without building
+    if: github.ref == 'refs/heads/block16-release-dependency-audit'
     runs-on: windows-2022
     timeout-minutes: 15
     steps:
-      - name: Check out BLOCK16
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
-      - name: Locate Visual Studio tools
-        uses: microsoft/setup-msbuild@v2
-
-      - name: Audit tracked files and Release project configurations
+      - name: Check Release declarations and dependency paths
         shell: pwsh
         run: |
-          $ErrorActionPreference = "Stop"
+          $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force -Path audit-report | Out-Null
-          $report = "audit-report/release-dependency-audit.txt"
-          "BLOCK16 Release dependency audit" | Set-Content $report
-          "Commit: $env:GITHUB_SHA" | Add-Content $report
-          "Runner: windows-2022" | Add-Content $report
-          "" | Add-Content $report
-
-          $checks = @(
-            @{ Name = "Windows client project"; Path = "WindowsClient/WindowsClient.vcxproj" },
-            @{ Name = "Visual Studio solution"; Path = "Client_2012.sln" },
-            @{ Name = "CoreScriptConverter executable"; Path = "CoreScriptConverter2/tool/win32/rsc.exe" },
-            @{ Name = "CoreScriptConverter config"; Path = "CoreScriptConverter2/tool/rsc.config" },
-            @{ Name = "Shader compiler x86"; Path = "Rendering/ShaderCompiler/ShaderCompiler.exe" },
-            @{ Name = "Shader compiler x64"; Path = "Rendering/ShaderCompiler/ShaderCompiler_x64.exe" },
-            @{ Name = "FMOD header"; Path = "fmod/include/fmod.hpp" },
-            @{ Name = "FMOD x86 import library"; Path = "fmod/win32/lib/fmod_vc.lib" },
-            @{ Name = "Repository zlib library"; Path = "zlib/zlib.lib" },
-            @{ Name = "Repository SDL2 2.0.4 library"; Path = "SDL2/Win/2.0.4/SDL2.lib" },
-            @{ Name = "Boost static project"; Path = "boostlibs/boost.static.vcxproj" },
-            @{ Name = "RbxDebug project"; Path = "RbxDebug/RbxDebug.vcxproj" }
-          )
-
-          $missing = 0
-          foreach ($check in $checks) {
-            $exists = Test-Path -LiteralPath $check.Path
-            $status = if ($exists) { "OK" } else { "MISSING" }
-            "$status | $($check.Name) | $($check.Path)" | Tee-Object -FilePath $report -Append
-            if (-not $exists) { $missing++ }
-          }
-
-          "" | Add-Content $report
-          "Release configuration declarations:" | Tee-Object -FilePath $report -Append
+          $report = 'audit-report/release-dependency-audit.txt'
+          "Commit: $env:GITHUB_SHA" | Set-Content $report
+          'Path checks only. No compiler, packer, or dependency executable is run.' | Add-Content $report
+          $failed = $false
           $projects = @(
-            "WindowsClient/WindowsClient.vcxproj",
-            "boostlibs/boost.static.vcxproj",
-            "RbxDebug/RbxDebug.vcxproj",
-            "App/App.vcxproj",
-            "Base/Base.vcxproj"
+            'WindowsClient/WindowsClient.vcxproj',
+            'App/App.vcxproj',
+            'Base/Base.vcxproj',
+            'Network/Network.vcxproj',
+            'Log/Log.vcxproj',
+            'boostlibs/boost.static.vcxproj',
+            'Rendering/GfxCore/GfxCore.vcxproj',
+            'RbxDebug/RbxDebug.vcxproj'
           )
           foreach ($project in $projects) {
-            if (-not (Test-Path $project)) {
-              "MISSING PROJECT | $project" | Tee-Object -FilePath $report -Append
-              $missing++
-              continue
+            $declared = $false
+            if (Test-Path -LiteralPath $project -PathType Leaf) {
+              [xml]$xml = Get-Content -LiteralPath $project -Raw
+              $declared = $null -ne $xml.SelectSingleNode("//*[local-name()='ProjectConfiguration' and @Include='Release|Win32']")
             }
-            [xml]$xml = Get-Content -LiteralPath $project
-            $release = @($xml.Project.ItemGroup.ProjectConfiguration | Where-Object { $_.Configuration -eq "Release" -and $_.Platform -eq "Win32" })
-            $status = if ($release.Count -gt 0) { "FOUND" } else { "NOT FOUND" }
-            "$status | Release|Win32 | $project" | Tee-Object -FilePath $report -Append
-            if ($release.Count -eq 0) { $missing++ }
+            $status = if ($declared) { 'DECLARED' } else { 'NOT FOUND' }
+            "$status | Release / Win32 | $project" | Tee-Object -FilePath $report -Append
+            if (-not $declared) { $failed = $true }
           }
 
-          "" | Add-Content $report
-          "External Contribs dependencies:" | Tee-Object -FilePath $report -Append
-          if ([string]::IsNullOrWhiteSpace($env:CONTRIB_PATH) -or -not (Test-Path -LiteralPath $env:CONTRIB_PATH -PathType Container)) {
-            "NOT INSPECTED | The hosted runner does not have the Contribs folder from the iPhone Files app." | Tee-Object -FilePath $report -Append
-            "Expected Release dependencies include Boost 1.56, SDL2 headers/library, OpenSSL libraries, DirectShow headers/strmbase.lib, Windows SDK, zlib, libcurl, cpp-netlib, W3C libwww, TBB, Telemetry SDK, and VMProtect SDK/build inputs." | Tee-Object -FilePath $report -Append
-            "This is an environment boundary, not evidence that those files are missing from the user's extracted archive." | Tee-Object -FilePath $report -Append
-          } else {
-            "CONTRIB_PATH is configured on the runner; checking Release prerequisites." | Tee-Object -FilePath $report -Append
-            & pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/Check-WindowsClientPrerequisites.ps1 -Configuration Release -ContribPath $env:CONTRIB_PATH 2>&1 |
-              Tee-Object -FilePath $report -Append
-            if ($LASTEXITCODE -ne 0) { $missing++ }
+          $checker = './scripts/Check-WindowsClientPrerequisites.ps1'
+          $haveContribs = -not [string]::IsNullOrWhiteSpace($env:CONTRIB_PATH) -and (Test-Path -LiteralPath $env:CONTRIB_PATH -PathType Container)
+          $contrib = ''
+          if ($haveContribs) { $contrib = [System.IO.Path]::GetFullPath($env:CONTRIB_PATH) }
+          $result = & pwsh -NoProfile -File $checker -Configuration Release -ContribPath $contrib
+          $checkerExit = $LASTEXITCODE
+          foreach ($line in $result) {
+            if ($line -match '^\s*CONTRIB_PATH:') { continue }
+            if ($line -match 'VMProtect key file') {
+              $line = ($line -split ' -- ', 2)[0]
+            } elseif ($haveContribs) {
+              $line = $line.Replace($contrib, '<CONTRIB_PATH>', [StringComparison]::OrdinalIgnoreCase)
+            }
+            $line | Tee-Object -FilePath $report -Append
           }
+          if (-not $haveContribs) {
+            'NOT INSPECTED | No authorized Contribs directory is mounted on this runner. This does not establish that any archive contents are missing.' | Tee-Object -FilePath $report -Append
+            $failed = $true
+          }
+          if ($checkerExit -ne 0 -or $failed) { throw 'Release prerequisites were not verified; see the audit report.' }
+          'Declared project configurations and checked paths passed. Architecture, ABI, licensing, and build success remain unverified.' | Tee-Object -FilePath $report -Append
 
-          "" | Add-Content $report
-          "Repository-side missing checks: $missing" | Tee-Object -FilePath $report -Append
-          "No build, packaging, VMProtect operation, or repository source modification was performed." | Tee-Object -FilePath $report -Append
-          Get-Content $report
-
-      - name: Upload audit report
+      - uses: actions/upload-artifact@v4
         if: always()
-        uses: actions/upload-artifact@v4
         with:
           name: block16-release-dependency-audit
-          path: audit-report/
-          if-no-files-found: warn
+          path: audit-report/release-dependency-audit.txt
+          if-no-files-found: error
           retention-days: 14
