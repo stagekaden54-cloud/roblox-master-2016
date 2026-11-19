@@ -1,0 +1,66 @@
+name: BLOCK16 DirectShow Release x86
+on:
+  push:
+    branches: [block16-release-dependency-audit]
+    paths: [.github/workflows/block16-directshow-release.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  directshow:
+    if: github.ref == 'refs/heads/block16-release-dependency-audit'
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: microsoft/Windows-classic-samples
+          ref: 434f6002bdf9cf9829406c3ff2b33387982d6168
+          sparse-checkout: Samples/Win7Samples/multimedia/directshow/baseclasses
+          persist-credentials: false
+      - name: Build and inspect strmbase.lib
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $source = (Resolve-Path 'Samples/Win7Samples/multimedia/directshow/baseclasses').Path
+          $out = (New-Item -ItemType Directory -Force directshow-release).FullName
+          $logs = (New-Item -ItemType Directory -Force directshow-logs).FullName
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vs) { throw 'VS2022 C++ tools not found.' }
+          $vcvars = Join-Path $vs 'VC/Auxiliary/Build/vcvars32.bat'
+          if (-not (Test-Path -LiteralPath (Join-Path $source 'streams.h') -PathType Leaf)) { throw 'DirectShow headers not found.' }
+          $batch = Join-Path $out 'build.cmd'
+          @"
+          @echo off
+          call "$vcvars" || exit /b 1
+          cd /d "$out" || exit /b 1
+          for %%f in ("$source\*.cpp") do (
+            cl /nologo /c /O2 /MD /EHsc /DNDEBUG /DWIN32 /D_LIB /DUNICODE /D_UNICODE /I"$source" "%%~ff" || exit /b 1
+          )
+          lib /nologo /MACHINE:X86 /OUT:strmbase.lib *.obj || exit /b 1
+          dumpbin /nologo /headers strmbase.lib > "$logs\headers.txt" || exit /b 1
+          dumpbin /nologo /directives strmbase.lib > "$logs\directives.txt" || exit /b 1
+          "@ | Set-Content -LiteralPath $batch -Encoding ascii
+          & cmd.exe /d /c $batch 2>&1 | Tee-Object (Join-Path $logs 'build.txt')
+          if ($LASTEXITCODE -ne 0) { throw "DirectShow dependency build failed: $LASTEXITCODE" }
+          $lib = Join-Path $out 'strmbase.lib'
+          if (-not (Test-Path -LiteralPath $lib -PathType Leaf)) { throw 'No Release library was created.' }
+          $machines = @(Select-String -LiteralPath (Join-Path $logs 'headers.txt') -Pattern '^\s*([0-9A-F]+) machine \(')
+          if (-not $machines.Count -or ($machines | Where-Object { $_.Matches[0].Groups[1].Value -ne '14C' })) { throw 'Expected only x86 COFF members.' }
+          $directives = Get-Content -LiteralPath (Join-Path $logs 'directives.txt') -Raw
+          if ($directives -notmatch '\bMSVCRT\b' -or $directives -match '\b(MSVCRTD|LIBCMTD)\b') { throw 'Release CRT verification failed.' }
+          (Get-FileHash -LiteralPath $lib -Algorithm SHA256).Hash | Set-Content (Join-Path $logs 'strmbase.sha256')
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: block16-directshow-release-logs
+          path: directshow-logs/
+          if-no-files-found: warn
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: block16-strmbase-release-x86
+          path: directshow-release/strmbase.lib
+          if-no-files-found: error
+          retention-days: 7
