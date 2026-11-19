@@ -1,0 +1,107 @@
+name: BLOCK16 Release Telemetry Diagnostic
+on:
+  push:
+    branches: [block16-release-dependency-audit]
+    paths: [.github/workflows/block16-release-telemetry-diagnostic.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  compile-link:
+    if: github.ref == 'refs/heads/block16-release-dependency-audit'
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: fb08c9cd938410ddc1c1a4681f4f959559996d71
+          path: diagnostic-baseline
+          sparse-checkout: .github/workflows
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: microsoft/Windows-classic-samples
+          ref: 434f6002bdf9cf9829406c3ff2b33387982d6168
+          path: directshow-source
+          sparse-checkout: Samples/Win7Samples/multimedia/directshow/baseclasses
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: block16-strmbase-release-x86
+          run-id: '44439715308'
+          github-token: ${{ github.token }}
+          path: directshow-artifact
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: microsoft/setup-msbuild@v2
+      - name: Restore public and repository-supplied build inputs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force build-logs | Out-Null
+          $env:CONTRIB_PATH = Join-Path $env:RUNNER_TEMP 'legacy-contrib'
+          python -m pip install --disable-pip-version-check PyYAML==6.0.2
+          if ($LASTEXITCODE -ne 0) { throw 'YAML parser install failed.' }
+          @'
+          import pathlib, subprocess, tempfile, yaml
+          source = pathlib.Path('diagnostic-baseline/.github/workflows/windows-client-build.yml')
+          data = yaml.load(source.read_text(encoding='utf-8-sig'), Loader=yaml.BaseLoader)
+          steps = data['jobs']['build-win32-debug']['steps']
+          names = (
+              'Install Microsoft Visual C++ 2012 Update 4 x86 runtime',
+              'Restore pinned legacy Boost and zlib dependencies',
+              'Restore pinned SDL 2.0.4 headers and x86 import library',
+              'Restore remaining open-source dependencies',
+          )
+          with tempfile.TemporaryDirectory() as temp:
+              for name in names:
+                  matches = [s for s in steps if s.get('name') == name]
+                  if len(matches) != 1 or matches[0].get('shell') != 'pwsh':
+                      raise SystemExit(f'Expected one PowerShell restore step: {name}')
+                  print(name, flush=True)
+                  script = pathlib.Path(temp) / 'restore.ps1'
+                  script.write_text(matches[0]['run'], encoding='utf-8')
+                  subprocess.run(['pwsh', '-NoProfile', '-File', str(script)], check=True)
+          '@ | python -u - 2>&1 | Tee-Object -FilePath build-logs/restore.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency restore failed; Telemetry test did not run.' }
+      - name: Stage DirectShow and run the Release compile and link test
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ds = Join-Path $env:CONTRIB_PATH 'DSBaseClasses'
+          $headers = 'directshow-source/Samples/Win7Samples/multimedia/directshow/baseclasses'
+          $sourceDir = Join-Path $ds 'Sources'
+          $libDir = Join-Path $ds 'Lib'
+          New-Item -ItemType Directory -Force $sourceDir,$libDir | Out-Null
+          Copy-Item "$headers/*" $sourceDir -Recurse -Force
+          Copy-Item 'directshow-artifact/strmbase.lib' (Join-Path $libDir 'strmbase.lib')
+          if (-not (Test-Path -LiteralPath (Join-Path $sourceDir 'streams.h') -PathType Leaf)) { throw 'DirectShow headers not staged.' }
+          $sdk = Join-Path $env:CONTRIB_PATH 'Telemetry/Telemetry2SDKWin32_20M'
+          if (Test-Path -LiteralPath $sdk) { throw 'Telemetry SDK must be absent for this test.' }
+          'Telemetry SDK intentionally absent from the staged Contribs tree.' | Tee-Object -FilePath build-logs/diagnostic-status.txt
+          foreach ($path in @('TBB_4_1/include/tbb/tbb.h', (Join-Path $env:CONTRIB_PATH 'VMProtectWin_2.13/VMProtectSDK.h'))) {
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              "Not provisioned in this diagnostic: $path. The compiler or linker may stop before Telemetry can be evaluated." | Tee-Object -FilePath build-logs/diagnostic-status.txt -Append
+            }
+          }
+          $env:CL = '/showIncludes'
+          $env:LINK = '/VERBOSE:LIB'
+          msbuild .\Client_2012.sln /m /t:WindowsClient /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143 /p:PostBuildEventUseInBuild=false /v:normal 2>&1 |
+            Tee-Object -FilePath build-logs/release-compile-link.txt
+          $code = $LASTEXITCODE
+          if ($code -ne 0) { throw "MSBuild exit code $code. Inspect the first actionable error before drawing a Telemetry conclusion." }
+          $exe = 'WindowsClient/Win32/Release/BLOCK16Client.exe'
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf) -or (Get-Item -LiteralPath $exe).Length -eq 0) { throw 'Expected linked executable is missing or empty.' }
+          'Compile and link passed with the SDK absent from staged Contribs. Review include and linker traces before changing the production checker. Packaging and runtime were not tested.' | Tee-Object -FilePath build-logs/diagnostic-status.txt -Append
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: block16-release-telemetry-logs
+          path: build-logs/*.txt
+          if-no-files-found: warn
+          retention-days: 7
