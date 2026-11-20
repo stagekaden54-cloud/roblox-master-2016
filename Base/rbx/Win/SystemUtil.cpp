@@ -21,6 +21,8 @@ namespace SystemUtil
     {
         OSVERSIONINFO osvi = {0};
         osvi.dwOSVersionInfoSize=sizeof(osvi);
+        // Preserve the legacy version query while documenting this deprecated Windows API use.
+#pragma warning(suppress: 4996)
         GetVersionEx (&osvi);
         return RBX::format("%d.%d.%d.%d", osvi.dwOSVersionInfoSize, osvi.dwMajorVersion, osvi.dwMinorVersion, osvi.dwBuildNumber);
 	}
