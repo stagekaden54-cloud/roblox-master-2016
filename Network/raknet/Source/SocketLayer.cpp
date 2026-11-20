@@ -254,7 +254,7 @@ void SocketLayer::SetDoNotFragment( SOCKET listenSocket, int opt, int IPPROTO )
 			NULL, dwIOError, MAKELANGID( LANG_NEUTRAL, SUBLANG_DEFAULT ),  // Default language
 			( LPTSTR ) & messageBuffer, 0, NULL );
 		// I see this hit on XP with IPV6 for some reason
-		RAKNET_DEBUG_PRINTF( "Warning: setsockopt__(IP_DONTFRAGMENT) failed:Error code - %d\n%s", dwIOError, messageBuffer );
+		RAKNET_DEBUG_PRINTF( "Warning: setsockopt__(IP_DONTFRAGMENT) failed:Error code - %d\n%s", dwIOError, (char*)messageBuffer );
 		LocalFree( messageBuffer );
 #endif
 	}
@@ -289,7 +289,7 @@ void SocketLayer::SetSocketOptions( SOCKET listenSocket)
 	NULL, dwIOError, MAKELANGID( LANG_NEUTRAL, SUBLANG_DEFAULT ),  // Default language
 	( LPTSTR ) & messageBuffer, 0, NULL );
 	// something has gone wrong here...
-	RAKNET_DEBUG_PRINTF( "setsockopt__(SO_REUSEADDR) failed:Error code - %d\n%s", dwIOError, messageBuffer );
+	RAKNET_DEBUG_PRINTF( "setsockopt__(SO_REUSEADDR) failed:Error code - %d\n%s", dwIOError, (char*)messageBuffer );
 	//Free the buffer.
 	LocalFree( messageBuffer );
 	#endif
@@ -345,7 +345,7 @@ void SocketLayer::SetSocketOptions( SOCKET listenSocket)
 		NULL, dwIOError, MAKELANGID( LANG_NEUTRAL, SUBLANG_DEFAULT ),  // Default language
 		( LPTSTR ) & messageBuffer, 0, NULL );
 	// something has gone wrong here...
-	RAKNET_DEBUG_PRINTF( "setsockopt__(SO_BROADCAST) failed:Error code - %d\n%s", dwIOError, messageBuffer );
+	RAKNET_DEBUG_PRINTF( "setsockopt__(SO_BROADCAST) failed:Error code - %d\n%s", dwIOError, (char*)messageBuffer );
 	//Free the buffer.
 	LocalFree( messageBuffer );
 
@@ -552,7 +552,7 @@ SOCKET SocketLayer::CreateBoundSocket_Old( unsigned short port, bool blockingSoc
 			NULL, dwIOError, MAKELANGID( LANG_NEUTRAL, SUBLANG_DEFAULT ),  // Default language
 			( LPTSTR ) & messageBuffer, 0, NULL );
 		// something has gone wrong here...
-		RAKNET_DEBUG_PRINTF( "socket__(...) failed:Error code - %d\n%s", dwIOError, messageBuffer );
+		RAKNET_DEBUG_PRINTF( "socket__(...) failed:Error code - %d\n%s", dwIOError, (char*)messageBuffer );
 		char str[512];
 		strcpy(str,(const char*) messageBuffer);
 		//Free the buffer.
@@ -650,7 +650,7 @@ SOCKET SocketLayer::CreateBoundSocket_Old( unsigned short port, bool blockingSoc
 			NULL, dwIOError, MAKELANGID( LANG_NEUTRAL, SUBLANG_DEFAULT ),  // Default language
 			( LPTSTR ) & messageBuffer, 0, NULL );
 		// something has gone wrong here...
-		RAKNET_DEBUG_PRINTF( "bind__(...) failed:Error code - %d\n%s", (unsigned int) dwIOError, (char*) messageBuffer );
+		RAKNET_DEBUG_PRINTF( "bind__(...) failed:Error code - %d\n%s", (unsigned int) dwIOError, (char*) (char*)messageBuffer );
 		//Free the buffer.
 		LocalFree( messageBuffer );
 #endif //defined(RBX_PLATFORM_DURANGO) 
@@ -761,7 +761,7 @@ SOCKET SocketLayer::CreateBoundSocket( unsigned short port, bool blockingSocket,
 		( LPTSTR ) & messageBuffer, 0, NULL );
 	// something has gone wrong here...
 
-	RAKNET_DEBUG_PRINTF( "bind__(...) failed:Error code - %d\n%s", (unsigned int) dwIOError, (char*) messageBuffer );
+	RAKNET_DEBUG_PRINTF( "bind__(...) failed:Error code - %d\n%s", (unsigned int) dwIOError, (char*) (char*)messageBuffer );
 	//Free the buffer.
 	LocalFree( messageBuffer );
 #elif defined(__GNUC__)  || defined(__GCCXML__) && !defined(_WIN32)
@@ -1340,7 +1340,7 @@ int SocketLayer::SendTo( SOCKET s, const char *data, int length, SystemAddress &
 			NULL, dwIOError, MAKELANGID( LANG_NEUTRAL, SUBLANG_DEFAULT ),  // Default language
 			( LPTSTR ) & messageBuffer, 0, NULL );
 		// something has gone wrong here...
-		RAKNET_DEBUG_PRINTF( "sendto failed:Error code - %d\n%s", dwIOError, messageBuffer );
+		RAKNET_DEBUG_PRINTF( "sendto failed:Error code - %d\n%s", dwIOError, (char*)messageBuffer );
 
 		//Free the buffer.
 		LocalFree( messageBuffer );
@@ -1379,7 +1379,7 @@ int SocketLayer::SendToTTL( SOCKET s, const char *data, int length, SystemAddres
 			NULL, dwIOError, MAKELANGID( LANG_NEUTRAL, SUBLANG_DEFAULT ),  // Default language
 			( LPTSTR ) & messageBuffer, 0, NULL );
 		// something has gone wrong here...
-		RAKNET_DEBUG_PRINTF( "getsockopt__(IPPROTO_IP,IP_TTL) failed:Error code - %d\n%s", dwIOError, messageBuffer );
+		RAKNET_DEBUG_PRINTF( "getsockopt__(IPPROTO_IP,IP_TTL) failed:Error code - %d\n%s", dwIOError, (char*)messageBuffer );
 		//Free the buffer.
 		LocalFree( messageBuffer );
 #endif
@@ -1397,7 +1397,7 @@ int SocketLayer::SendToTTL( SOCKET s, const char *data, int length, SystemAddres
 			NULL, dwIOError, MAKELANGID( LANG_NEUTRAL, SUBLANG_DEFAULT ),  // Default language
 			( LPTSTR ) & messageBuffer, 0, NULL );
 		// something has gone wrong here...
-		RAKNET_DEBUG_PRINTF( "setsockopt__(IPPROTO_IP,IP_TTL) failed:Error code - %d\n%s", dwIOError, messageBuffer );
+		RAKNET_DEBUG_PRINTF( "setsockopt__(IPPROTO_IP,IP_TTL) failed:Error code - %d\n%s", dwIOError, (char*)messageBuffer );
 		//Free the buffer.
 		LocalFree( messageBuffer );
 #endif
@@ -1640,7 +1640,7 @@ void GetMyIP_Win32( SystemAddress addresses[MAXIMUM_NUMBER_OF_INTERNAL_IDS] )
 			NULL, dwIOError, MAKELANGID( LANG_NEUTRAL, SUBLANG_DEFAULT ),  // Default language
 			( LPTSTR ) & messageBuffer, 0, NULL );
 		// something has gone wrong here...
-		RAKNET_DEBUG_PRINTF( "gethostname failed:Error code - %d\n%s", dwIOError, messageBuffer );
+		RAKNET_DEBUG_PRINTF( "gethostname failed:Error code - %d\n%s", dwIOError, (char*)messageBuffer );
 		//Free the buffer.
 		LocalFree( messageBuffer );
 #endif // defined(RBX_PLATFORM_WIN_MOBILE)
@@ -1693,7 +1693,7 @@ void GetMyIP_Win32( SystemAddress addresses[MAXIMUM_NUMBER_OF_INTERNAL_IDS] )
 			NULL, dwIOError, MAKELANGID( LANG_NEUTRAL, SUBLANG_DEFAULT ),  // Default language
 			( LPTSTR ) & messageBuffer, 0, NULL );
 		// something has gone wrong here...
-		RAKNET_DEBUG_PRINTF( "gethostbyname failed:Error code - %d\n%s", dwIOError, messageBuffer );
+		RAKNET_DEBUG_PRINTF( "gethostbyname failed:Error code - %d\n%s", dwIOError, (char*)messageBuffer );
 
 		//Free the buffer.
 		LocalFree( messageBuffer );
@@ -1815,7 +1815,7 @@ void SocketLayer::GetSystemAddress_Old ( SOCKET s, SystemAddress *systemAddressO
 			NULL, dwIOError, MAKELANGID( LANG_NEUTRAL, SUBLANG_DEFAULT ),  // Default language
 			( LPTSTR ) & messageBuffer, 0, NULL );
 		// something has gone wrong here...
-		RAKNET_DEBUG_PRINTF( "getsockname failed:Error code - %d\n%s", dwIOError, messageBuffer );
+		RAKNET_DEBUG_PRINTF( "getsockname failed:Error code - %d\n%s", dwIOError, (char*)messageBuffer );
 
 		//Free the buffer.
 		LocalFree( messageBuffer );
@@ -1845,7 +1845,7 @@ void SocketLayer::GetSystemAddress ( SOCKET s, SystemAddress *systemAddressOut )
 			NULL, dwIOError, MAKELANGID( LANG_NEUTRAL, SUBLANG_DEFAULT ),  // Default language
 			( LPTSTR ) & messageBuffer, 0, NULL );
 		// something has gone wrong here...
-		RAKNET_DEBUG_PRINTF( "getsockname failed:Error code - %d\n%s", dwIOError, messageBuffer );
+		RAKNET_DEBUG_PRINTF( "getsockname failed:Error code - %d\n%s", dwIOError, (char*)messageBuffer );
 
 		//Free the buffer.
 		LocalFree( messageBuffer );
