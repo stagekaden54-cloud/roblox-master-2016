@@ -724,6 +724,8 @@
       <FloatingPointModel>Fast</FloatingPointModel>
       <WarningLevel>Level3</WarningLevel>
       <TreatWarningAsError>true</TreatWarningAsError>
+      <!-- Keep strict Release warnings except known legacy SDK/compiler compatibility diagnostics. -->
+      <DisableSpecificWarnings>4267;4838</DisableSpecificWarnings>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <PrecompiledHeader>Use</PrecompiledHeader>
     </ClCompile>
