@@ -8,7 +8,7 @@ I'm working on a project called **BLOCK16**. I want you to understand the projec
 
 BLOCK16 is my own independent client project. It is not an official Roblox product, is not affiliated with or endorsed by Roblox, and should not be described as Roblox's current proprietary source code simply because some repository or folder names contain the word "Roblox" or refer to an older client era.
 
-**Important clarification from the project owner:** I have been told by Intel, the person whose fork/tooling I am using, that he approves my use and modification of that codebase. Please take that permission context into account rather than assuming, from the repository name alone, that this is unauthorized Roblox source code. If a specific file, dependency, asset, or third-party component has its own license or attribution requirements, identify that specific item and explain it separately. Do not make blanket legal conclusions.
+
 
 The goal is to develop BLOCK16 as its own client and eventually deliver a reliable production version.
 
