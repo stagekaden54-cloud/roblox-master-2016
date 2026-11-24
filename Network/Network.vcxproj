@@ -507,7 +507,8 @@
       <WarningLevel>Level3</WarningLevel>
       <TreatWarningAsError>true</TreatWarningAsError>
       <!-- Match legacy Release compatibility: explicit size/narrowing diagnostics remain visible as warnings. -->
-      <DisableSpecificWarnings>4267;4838</DisableSpecificWarnings>
+      <!-- SQLite3's legacy GetVersionExA call emits C4996 with the current Windows SDK. Keep other Release warnings strict. -->
+      <DisableSpecificWarnings>4267;4838;4996</DisableSpecificWarnings>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
     </ClCompile>
     <PostBuildEvent>
