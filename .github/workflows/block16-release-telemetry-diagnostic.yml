@@ -2,7 +2,7 @@ name: BLOCK16 Release Telemetry Diagnostic
 on:
   push:
     branches: [block16-release-dependency-audit]
-    paths: [.github/workflows/block16-release-telemetry-diagnostic.yml, Rendering/GfxCore/GfxCore.vcxproj, Rendering/GfxRender/GfxRender.vcxproj, Network/Network.vcxproj, Log/Log.vcxproj, Base/rbx/Win/SystemUtil.cpp, Network/raknet/Source/SocketLayer.cpp]
+    paths: [.github/workflows/block16-release-telemetry-diagnostic.yml, Rendering/GfxCore/GfxCore.vcxproj, Rendering/GfxRender/GfxRender.vcxproj, Network/Network.vcxproj, Log/Log.vcxproj, App/App.vcxproj, Network/Network.vcxproj, Base/rbx/Win/SystemUtil.cpp, Network/raknet/Source/SocketLayer.cpp]
   workflow_dispatch:
 permissions:
   contents: read
